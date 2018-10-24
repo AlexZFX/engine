@@ -1,6 +1,9 @@
 package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
+
+import java.io.IOException;
+
 /**
  * Copyright [2018] Alibaba Cloud All rights reserved
  * 
@@ -14,7 +17,7 @@ public abstract class AbstractEngine {
 	 * @param path the path of engine store data. 
 	 * @throws EngineException 
 	 */
-	public abstract void open(String path) throws EngineException;
+	public abstract void open(String path) throws EngineException, IOException;
 	
 	/**
 	 * close Engine
