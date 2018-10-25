@@ -1,10 +1,8 @@
 package com.alibabacloud.polar_race.engine.common;
 
-import com.alibabacloud.polar_race.engine.common.AbstractEngine;
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -22,53 +20,60 @@ public class EngineRace extends AbstractEngine {
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
     //    单个线程写入消息 100w
-    private static final int MSG_NUM = 1000000;
+    private static final int MSG_COUNT = 1000000;
     //    64 个线程
-    private static final int THREAD_NUM = 64;
+    private static final int THREAD_COUNT = 64;
     //    64个线程写消息 6400w
-    private static final int ALL_MSG_NUM = 64000000;
+    private static final int ALL_MSG_COUNT = 64000000;
     //    每个文件存放 400w 个数据
-    private static final int MSG_NUM_PERFILE = 4000000;
+    private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value+key 的文件大小
-    private static final int FILE_LEN = (KEY_LEN + VALUE_LEN) * MSG_NUM_PERFILE;
+    private static final int FILE_LEN = (KEY_LEN + VALUE_LEN) * MSG_COUNT_PERFILE;
     //    存放 value 的文件数量 16
-    private static final int FILE_NUM = 16;
+    private static final int FILE_COUNT = 16;
 
-    private static final int INDEX_LEN = ALL_MSG_NUM * 4;
+    private static final int INDEX_LEN = ALL_MSG_COUNT * 4;
 
     private ByteBuffer indexBuffer;
-    private ByteBuffer dataBuffer;
+    private ByteBuffer dataBuffer = ByteBuffer.allocate(KEY_LEN + VALUE_LEN);
     // data 编号，总共 6400w 个
-    private AtomicInteger dataPosition = new AtomicInteger(1);
+    private AtomicInteger dataNo = new AtomicInteger(1);
     private ArrayList<RandomAccessFile> dataFiles = new ArrayList<>();
+    private ArrayList<FileChannel> dataFileChannels = new ArrayList<>();
 
 
     @Override
     public void open(String path) throws EngineException, IOException {
-//        if (Files.exists(Paths.get(path + File.separator + "index"))){
-        if (Files.exists(Paths.get("index"))) {
-            indexBuffer = new RandomAccessFile("index", "rw").getChannel().map(FileChannel.MapMode.READ_WRITE, 0, INDEX_LEN >> 2 + 20);
-        } else {
-            indexBuffer = new RandomAccessFile("index", "rw").getChannel().map(FileChannel.MapMode.READ_WRITE, 0, INDEX_LEN >> 2 + 20);
+        indexBuffer = new RandomAccessFile("index", "rw").getChannel().map(FileChannel.MapMode.READ_WRITE, 0, INDEX_LEN >> 2 + 20);
+        for (int i = 0; i < FILE_COUNT; i++) {
+            RandomAccessFile file = new RandomAccessFile("data" + i, "rw");
+            dataFileChannels.add(file.getChannel());
+            dataFiles.add(file);
         }
     }
 
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
         int hash = key.hashCode() % INDEX_LEN * 4;
-
         dataBuffer.put(key);
         dataBuffer.put(value);
+        dataBuffer.flip();
+        try {
+            dataFileChannels.get(dataNo.get() / MSG_COUNT_PERFILE).write(dataBuffer,dataNo.get()*(KEY_LEN+VALUE_LEN));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         while (true) {
             indexBuffer.position(hash);
             int index = indexBuffer.getInt();
             if (index == 0) {
                 indexBuffer.position(hash);
-                indexBuffer.putInt(dataPosition.getAndIncrement());
+                indexBuffer.putInt(dataNo.getAndIncrement());
                 break;
             } else {
                 byte[] sameKey = new byte[8];
-                getKey(sameKey, dataPosition.get());
+                getKey(sameKey, dataNo.get());
                 if (Arrays.equals(key, sameKey)) {
                     indexBuffer.position(hash + 8);
                     indexBuffer.put(value);
@@ -79,6 +84,7 @@ public class EngineRace extends AbstractEngine {
             }
         }
     }
+
 
 
     @Override
@@ -109,25 +115,33 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
+        for (int i = 0; i < FILE_COUNT; i++) {
+            try {
+                RandomAccessFile file = new RandomAccessFile("data" + i, "rw");
+                dataFileChannels.get(i).close();
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     private void getKey(byte[] bytes, int position) {
-        int fileIndex = position / MSG_NUM_PERFILE;
-        RandomAccessFile file = dataFiles.get(fileIndex);
+        int fileIndex = position / MSG_COUNT_PERFILE;
         try {
-            file.seek((position * (KEY_LEN + VALUE_LEN)) % FILE_LEN);
-            file.read(bytes, 0, KEY_LEN);
+            dataFileChannels.get(fileIndex).read(dataBuffer,(KEY_LEN + VALUE_LEN) % FILE_LEN);
+            dataBuffer.get(bytes,0,KEY_LEN);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     private void getValue(byte[] bytes, int position) {
-        int fileIndex = position / MSG_NUM_PERFILE;
-        RandomAccessFile file = dataFiles.get(fileIndex);
+        int fileIndex = position / MSG_COUNT_PERFILE;
         try {
-            file.seek((position * (KEY_LEN + VALUE_LEN)) % FILE_LEN + 8);
-            file.read(bytes, 0, VALUE_LEN);
+            dataFileChannels.get(fileIndex).read(dataBuffer,(KEY_LEN + VALUE_LEN) % FILE_LEN + 8);
+            dataBuffer.get(bytes,0,VALUE_LEN);
         } catch (IOException e) {
             e.printStackTrace();
         }
