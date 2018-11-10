@@ -2,111 +2,142 @@ package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
+import com.carrotsearch.hppc.LongLongHashMap;
+import io.netty.util.concurrent.FastThreadLocal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
+import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class EngineRace extends AbstractEngine {
+
+    private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
     // key 长度 8B
     private static final int KEY_LEN = 8;
+    // offset 长度 8B
+    private static final int OFF_LEN = 8;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
     //    单个线程写入消息 100w
     private static final int MSG_COUNT = 1000000;
-    //    64 个线程
-    private static final int THREAD_COUNT = 64;
     //    64个线程写消息 6400w
     private static final int ALL_MSG_COUNT = 64000000;
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
-    //    存放 value+key 的文件大小
-    private static final int FILE_LEN = (KEY_LEN + VALUE_LEN) * MSG_COUNT_PERFILE;
-    //    存放 value 的文件数量 16
-    private static final int FILE_COUNT = 16;
+    //    存放 value 的文件数量 128
+    private static final int FILE_COUNT = 0x7F;
 
-    private static final int INDEX_LEN = ALL_MSG_COUNT * 4;
+    private static FileChannel keyFileChannel;
 
-    private ByteBuffer indexBuffer;
-    private ByteBuffer dataBuffer = ByteBuffer.allocate(KEY_LEN + VALUE_LEN);
-    // data 编号，总共 6400w 个
-    private AtomicInteger dataNo = new AtomicInteger(1);
-    private ArrayList<RandomAccessFile> dataFiles = new ArrayList<>();
-    private ArrayList<FileChannel> dataFileChannels = new ArrayList<>();
+    private static AtomicLong keyFileOffset;
+
+    private static final LongLongHashMap keyMap = new LongLongHashMap(ALL_MSG_COUNT, 0.99f);
+
+    private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
+
+    private static AtomicLong[] offsets = new AtomicLong[FILE_COUNT];
+
+    //线程私有的buffer，用于byte数组转long
+    private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
+        @Override
+        protected ByteBuffer initialValue() throws Exception {
+            return ByteBuffer.allocateDirect(KEY_LEN);
+        }
+    };
+
+    private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
+        @Override
+        protected ByteBuffer initialValue() throws Exception {
+            return ByteBuffer.allocateDirect(VALUE_LEN);
+        }
+    };
+
+    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() throws Exception {
+            return new byte[VALUE_LEN];
+        }
+    };
 
 
     @Override
     public void open(String path) throws EngineException, IOException {
-        indexBuffer = new RandomAccessFile("index", "rw").getChannel().map(FileChannel.MapMode.READ_WRITE, 0, INDEX_LEN >> 2 + 20);
-        for (int i = 0; i < FILE_COUNT; i++) {
-            RandomAccessFile file = new RandomAccessFile("data" + i, "rw");
-            dataFileChannels.add(file.getChannel());
-            dataFiles.add(file);
+        File file = new File(path);
+        if (!file.exists()) {
+            if (!file.mkdir()) {
+                throw new EngineException(RetCodeEnum.IO_ERROR, "创建文件目录失败");
+            }
+        }
+        //创建 FILE_COUNT个FileChannel 顺序写入
+        RandomAccessFile randomAccessFile;
+        if (file.isDirectory()) {
+            for (int i = 0; i < FILE_COUNT; i++) {
+                randomAccessFile = new RandomAccessFile(path + i, "rw");
+                FileChannel channel = randomAccessFile.getChannel();
+                fileChannels[i] = channel;
+                // 从 length处直接写入
+                offsets[i] = new AtomicLong(randomAccessFile.length());
+            }
+        } else {
+            throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
+        }
+        randomAccessFile = new RandomAccessFile(path + "key", "r");
+        keyFileChannel = randomAccessFile.getChannel();
+        ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);
+        ByteBuffer offBuffer = ByteBuffer.allocate(KEY_LEN);
+        keyFileOffset = new AtomicLong(randomAccessFile.length());
+        long temp = 0;
+        while (temp < keyFileOffset.get()) {
+            keyFileChannel.read(keyBuffer, temp);
+            temp += KEY_LEN;
+            keyFileChannel.read(offBuffer, temp);
+            temp += KEY_LEN;
+            keyBuffer.flip();
+            offBuffer.flip();
+            keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
         }
     }
 
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
-        int hash = key.hashCode() % INDEX_LEN * 4;
-        dataBuffer.put(key);
-        dataBuffer.put(value);
-        dataBuffer.flip();
+        //此时已经将key放到 localkey里面去了
+        long numkey = bytesToLong(key);
+        int hash = hash(numkey);
+        long off = offsets[hash].getAndAdd(VALUE_LEN);
+        keyMap.put(numkey, off);
         try {
-            dataFileChannels.get(dataNo.get() / MSG_COUNT_PERFILE).write(dataBuffer,dataNo.get()*(KEY_LEN+VALUE_LEN));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+            //key写入文件
+            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
+            //对应的offset写入文件
+            localKey.get().putLong(0, off);
+            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
 
-        while (true) {
-            indexBuffer.position(hash);
-            int index = indexBuffer.getInt();
-            if (index == 0) {
-                indexBuffer.position(hash);
-                indexBuffer.putInt(dataNo.getAndIncrement());
-                break;
-            } else {
-                byte[] sameKey = new byte[8];
-                getKey(sameKey, dataNo.get());
-                if (Arrays.equals(key, sameKey)) {
-                    indexBuffer.position(hash + 8);
-                    indexBuffer.put(value);
-                    break;
-                } else {
-                    hash = (hash + 4) % INDEX_LEN * 4;
-                }
-            }
+            //
+            localBufferValue.get().put(value, 0, VALUE_LEN);
+            fileChannels[hash].write(localBufferValue.get(), off);
+        } catch (IOException e) {
+            throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
     }
 
 
-
     @Override
     public byte[] read(byte[] key) throws EngineException {
-        byte[] value = null;
-        int hash = key.hashCode() % INDEX_LEN * 4;
-        while (true) {
-            indexBuffer.position(hash);
-            int position = indexBuffer.getInt();
-            if (position == 0) {
-                throw new EngineException(RetCodeEnum.NOT_FOUND, "Not Found");
-            }
-            byte[] sameKey = new byte[8];
-            getKey(sameKey, position);
-            if (Arrays.equals(key, sameKey)) {
-                getValue(value, position);
-                return value;
-            } else {
-                hash = (hash + 4) % INDEX_LEN * 4;
-            }
-
+        long numkey = bytesToLong(key);
+        int hash = hash(numkey);
+        long off = keyMap.get(numkey);
+        try {
+            fileChannels[hash].read(localBufferValue.get(), off);
+        } catch (IOException e) {
+            throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
+        localBufferValue.get().put(localByteValue.get(), 0, VALUE_LEN);
+        return localByteValue.get();
     }
 
     @Override
@@ -117,33 +148,19 @@ public class EngineRace extends AbstractEngine {
     public void close() {
         for (int i = 0; i < FILE_COUNT; i++) {
             try {
-                RandomAccessFile file = new RandomAccessFile("data" + i, "rw");
-                dataFileChannels.get(i).close();
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
+                fileChannels[i].close();
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.error("close error");
             }
         }
     }
 
-    private void getKey(byte[] bytes, int position) {
-        int fileIndex = position / MSG_COUNT_PERFILE;
-        try {
-            dataFileChannels.get(fileIndex).read(dataBuffer,(KEY_LEN + VALUE_LEN) % FILE_LEN);
-            dataBuffer.get(bytes,0,KEY_LEN);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private static long bytesToLong(byte[] bytes) {
+        localKey.get().put(bytes, 0, 8).flip();
+        return localKey.get().getLong();
     }
 
-    private void getValue(byte[] bytes, int position) {
-        int fileIndex = position / MSG_COUNT_PERFILE;
-        try {
-            dataFileChannels.get(fileIndex).read(dataBuffer,(KEY_LEN + VALUE_LEN) % FILE_LEN + 8);
-            dataBuffer.get(bytes,0,VALUE_LEN);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private static int hash(long key) {
+        return (int) (key & FILE_COUNT);
     }
 }
