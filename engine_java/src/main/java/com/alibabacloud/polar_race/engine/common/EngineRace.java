@@ -30,7 +30,9 @@ public class EngineRace extends AbstractEngine {
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
-    private static final int FILE_COUNT = 0x7F;
+    private static final int FILE_COUNT = 128;
+
+    private static final int HASH_VALUE = 0x7F;
 
     private static FileChannel keyFileChannel;
 
@@ -86,7 +88,11 @@ public class EngineRace extends AbstractEngine {
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
         }
-        randomAccessFile = new RandomAccessFile(path + "key", "r");
+        File keyFile = new File(path + "key");
+        if (!keyFile.exists()) {
+            keyFile.createNewFile();
+        }
+        randomAccessFile = new RandomAccessFile(keyFile, "rw");
         keyFileChannel = randomAccessFile.getChannel();
         ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);
         ByteBuffer offBuffer = ByteBuffer.allocate(KEY_LEN);
@@ -108,17 +114,22 @@ public class EngineRace extends AbstractEngine {
         //此时已经将key放到 localkey里面去了
         long numkey = bytesToLong(key);
         int hash = hash(numkey);
+
         long off = offsets[hash].getAndAdd(VALUE_LEN);
         keyMap.put(numkey, off);
         try {
             //key写入文件
+            localKey.get().position(0);
             keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
             //对应的offset写入文件
             localKey.get().putLong(0, off);
+            localKey.get().position(0);
             keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
-
-            //
+            //将value写入buffer
+            localBufferValue.get().position(0);
             localBufferValue.get().put(value, 0, VALUE_LEN);
+            //buffer写入文件
+            localBufferValue.get().position(0);
             fileChannels[hash].write(localBufferValue.get(), off);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
@@ -130,13 +141,20 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = bytesToLong(key);
         int hash = hash(numkey);
+
+
+        System.out.println(numkey);
+        System.out.println(hash);
+
         long off = keyMap.get(numkey);
         try {
+            localBufferValue.get().position(0);
             fileChannels[hash].read(localBufferValue.get(), off);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-        localBufferValue.get().put(localByteValue.get(), 0, VALUE_LEN);
+        localBufferValue.get().position(0);
+        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
         return localByteValue.get();
     }
 
@@ -156,11 +174,12 @@ public class EngineRace extends AbstractEngine {
     }
 
     private static long bytesToLong(byte[] bytes) {
+        localKey.get().position(0);
         localKey.get().put(bytes, 0, 8).flip();
         return localKey.get().getLong();
     }
 
     private static int hash(long key) {
-        return (int) (key & FILE_COUNT);
+        return (int) (key & HASH_VALUE);
     }
 }
