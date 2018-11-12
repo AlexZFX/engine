@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class EngineRace extends AbstractEngine {
@@ -135,6 +136,9 @@ public class EngineRace extends AbstractEngine {
         //此时已经将key放到 localkey里面去了
         long numkey = bytesToLong(key);
         int hash = hash(numkey);
+//        logger.warn("key = "+ Arrays.toString(key));
+//        logger.warn("numkey = " + numkey);
+//        logger.warn(" hash = "+hash);
 
         long off = offsets[hash].getAndAdd(VALUE_LEN);
         keyMap.put(numkey, off + 1);
@@ -162,7 +166,9 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = bytesToLong(key);
         int hash = hash(numkey);
-
+        logger.warn("key = " + Arrays.toString(key));
+        logger.warn("numkey = " + numkey);
+        logger.warn(" hash = " + hash);
 
 //        System.out.println(numkey);
 //        System.out.println(hash);
@@ -180,6 +186,7 @@ public class EngineRace extends AbstractEngine {
         }
         localBufferValue.get().position(0);
         localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+        logger.warn("value = " + Arrays.toString(localByteValue.get()));
         return localByteValue.get();
     }
 
