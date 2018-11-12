@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -91,8 +90,6 @@ public class EngineRace extends AbstractEngine {
                     fileChannels[i] = channel;
                     // 从 length处直接写入
                     offsets[i] = new AtomicLong(randomAccessFile.length());
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -116,14 +113,16 @@ public class EngineRace extends AbstractEngine {
             ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);
             ByteBuffer offBuffer = ByteBuffer.allocate(KEY_LEN);
             keyFileOffset = new AtomicLong(randomAccessFile.length());
-            long temp = 0;
-            while (temp < keyFileOffset.get()) {
+            long temp = 0, maxOff = keyFileOffset.get();
+            while (temp < maxOff) {
+                keyBuffer.position(0);
                 keyFileChannel.read(keyBuffer, temp);
                 temp += KEY_LEN;
+                offBuffer.position(0);
                 keyFileChannel.read(offBuffer, temp);
                 temp += KEY_LEN;
-                keyBuffer.flip();
-                offBuffer.flip();
+                keyBuffer.position(0);
+                offBuffer.position(0);
                 keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
             }
         } catch (IOException e) {
@@ -170,8 +169,8 @@ public class EngineRace extends AbstractEngine {
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
         long off = keyMap.get(numkey);
-        if (off == 0){
-            throw new EngineException(RetCodeEnum.NOT_FOUND,numkey + "不存在");
+        if (off == 0) {
+            throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
         try {
             localBufferValue.get().position(0);
