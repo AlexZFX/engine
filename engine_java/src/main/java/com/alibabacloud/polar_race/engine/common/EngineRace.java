@@ -70,16 +70,20 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void open(String path) throws EngineException, IOException {
         File file = new File(path);
+        // 创建目录
         if (!file.exists()) {
             if (!file.mkdir()) {
-                throw new EngineException(RetCodeEnum.IO_ERROR, "创建文件目录失败");
+                throw new EngineException(RetCodeEnum.IO_ERROR, "创建文件目录失败：" + path);
+            } else {
+                logger.info("创建文件目录成功：" + path);
             }
         }
+
         //创建 FILE_COUNT个FileChannel 顺序写入
         RandomAccessFile randomAccessFile;
         if (file.isDirectory()) {
             for (int i = 0; i < FILE_COUNT; i++) {
-                randomAccessFile = new RandomAccessFile(path + i, "rw");
+                randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
                 FileChannel channel = randomAccessFile.getChannel();
                 fileChannels[i] = channel;
                 // 从 length处直接写入
@@ -88,10 +92,11 @@ public class EngineRace extends AbstractEngine {
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
         }
-        File keyFile = new File(path + "key");
+        File keyFile = new File(path + File.separator + "key");
         if (!keyFile.exists()) {
             keyFile.createNewFile();
         }
+        // 从 index 文件建立 hashmap
         randomAccessFile = new RandomAccessFile(keyFile, "rw");
         keyFileChannel = randomAccessFile.getChannel();
         ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);

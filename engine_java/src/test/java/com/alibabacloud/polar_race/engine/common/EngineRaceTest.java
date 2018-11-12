@@ -20,7 +20,7 @@ public class EngineRaceTest {
     public void test() {
         EngineRace race = new EngineRace();
         try {
-            race.open("F:\\idea projects\\engine\\engine_java\\testFile\\");
+            race.open("F:\\idea");
             byte[] key1 = new byte[8];
             byte[] value1 = new byte[4096];
             byte[] key2 = new byte[8];
