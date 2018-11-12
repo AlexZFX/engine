@@ -138,7 +138,7 @@ public class EngineRace extends AbstractEngine {
         int hash = hash(numkey);
 
         long off = offsets[hash].getAndAdd(VALUE_LEN);
-        keyMap.put(numkey, off);
+        keyMap.put(numkey, off + 1);
         try {
             //key写入文件
             localKey.get().position(0);
@@ -165,13 +165,17 @@ public class EngineRace extends AbstractEngine {
         int hash = hash(numkey);
 
 
-        System.out.println(numkey);
-        System.out.println(hash);
+//        System.out.println(numkey);
+//        System.out.println(hash);
 
+        // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
         long off = keyMap.get(numkey);
+        if (off == 0){
+            throw new EngineException(RetCodeEnum.NOT_FOUND,numkey + "不存在");
+        }
         try {
             localBufferValue.get().position(0);
-            fileChannels[hash].read(localBufferValue.get(), off);
+            fileChannels[hash].read(localBufferValue.get(), off - 1);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
