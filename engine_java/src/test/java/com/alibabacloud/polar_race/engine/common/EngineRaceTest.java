@@ -37,13 +37,15 @@ public class EngineRaceTest {
             for (int i = 0; i < value2.length; i++) {
                 value2[i] = 1;
             }
-            race.write(key1, value1);
-            race.write(key2, value2);
+            for (int i = 0; i < 10; i++) {
+                race.write(key1, value1);
+                race.write(key2, value2);
+            }
             System.out.println(Arrays.toString(key1));
             System.out.println(Arrays.toString(race.read(key1)));
             System.out.println(Arrays.toString(key2));
             System.out.println(Arrays.toString(race.read(key2)));
-        } catch (EngineException | IOException e) {
+        } catch (EngineException e) {
             e.printStackTrace();
         }
     }

@@ -17,7 +17,7 @@ public abstract class AbstractEngine {
 	 * @param path the path of engine store data. 
 	 * @throws EngineException 
 	 */
-	public abstract void open(String path) throws EngineException, IOException;
+	public abstract void open(String path) throws EngineException;
 	
 	/**
 	 * close Engine

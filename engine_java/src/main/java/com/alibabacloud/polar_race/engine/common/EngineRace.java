@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -68,7 +69,7 @@ public class EngineRace extends AbstractEngine {
 
 
     @Override
-    public void open(String path) throws EngineException, IOException {
+    public void open(String path) throws EngineException {
         File file = new File(path);
         // 创建目录
         if (!file.exists()) {
@@ -83,34 +84,50 @@ public class EngineRace extends AbstractEngine {
         RandomAccessFile randomAccessFile;
         if (file.isDirectory()) {
             for (int i = 0; i < FILE_COUNT; i++) {
-                randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                FileChannel channel = randomAccessFile.getChannel();
-                fileChannels[i] = channel;
-                // 从 length处直接写入
-                offsets[i] = new AtomicLong(randomAccessFile.length());
+                try {
+                    randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+
+                    FileChannel channel = randomAccessFile.getChannel();
+                    fileChannels[i] = channel;
+                    // 从 length处直接写入
+                    offsets[i] = new AtomicLong(randomAccessFile.length());
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
         }
         File keyFile = new File(path + File.separator + "key");
         if (!keyFile.exists()) {
-            keyFile.createNewFile();
+            try {
+                keyFile.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
         // 从 index 文件建立 hashmap
-        randomAccessFile = new RandomAccessFile(keyFile, "rw");
-        keyFileChannel = randomAccessFile.getChannel();
-        ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);
-        ByteBuffer offBuffer = ByteBuffer.allocate(KEY_LEN);
-        keyFileOffset = new AtomicLong(randomAccessFile.length());
-        long temp = 0;
-        while (temp < keyFileOffset.get()) {
-            keyFileChannel.read(keyBuffer, temp);
-            temp += KEY_LEN;
-            keyFileChannel.read(offBuffer, temp);
-            temp += KEY_LEN;
-            keyBuffer.flip();
-            offBuffer.flip();
-            keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
+        try {
+            randomAccessFile = new RandomAccessFile(keyFile, "rw");
+            keyFileChannel = randomAccessFile.getChannel();
+
+            ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);
+            ByteBuffer offBuffer = ByteBuffer.allocate(KEY_LEN);
+            keyFileOffset = new AtomicLong(randomAccessFile.length());
+            long temp = 0;
+            while (temp < keyFileOffset.get()) {
+                keyFileChannel.read(keyBuffer, temp);
+                temp += KEY_LEN;
+                keyFileChannel.read(offBuffer, temp);
+                temp += KEY_LEN;
+                keyBuffer.flip();
+                offBuffer.flip();
+                keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
