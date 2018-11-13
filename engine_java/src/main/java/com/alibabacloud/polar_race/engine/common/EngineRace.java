@@ -126,6 +126,12 @@ public class EngineRace extends AbstractEngine {
                 offBuffer.position(0);
                 keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
             }
+//            System.out.println(keyMap.keys.length);
+//            System.out.println(keyMap.values.length);
+
+            for (int i = 7; i < 1000; i += 3) {
+                System.out.println(keyMap.get(i));
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -134,16 +140,19 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
         //此时已经将key放到 localkey里面去了
-        long numkey = bytesToLong(key);
+        long numkey = Util.bytes2long(key);
         int hash = hash(numkey);
 //        logger.warn("key = "+ Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" hash = "+hash);
 
         long off = offsets[hash].getAndAdd(VALUE_LEN);
+//        System.out.println(numkey + " - " + (off + 1));
+//        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
         keyMap.put(numkey, off + 1);
         try {
             //key写入文件
+            localKey.get().putLong(0, numkey);
             localKey.get().position(0);
             keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
             //对应的offset写入文件
@@ -164,7 +173,7 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public byte[] read(byte[] key) throws EngineException {
-        long numkey = bytesToLong(key);
+        long numkey = Util.bytes2long(key);
         int hash = hash(numkey);
         logger.warn("key = " + Arrays.toString(key));
         logger.warn("numkey = " + numkey);
@@ -186,7 +195,7 @@ public class EngineRace extends AbstractEngine {
         }
         localBufferValue.get().position(0);
         localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
-        logger.warn("value = " + Arrays.toString(localByteValue.get()));
+//        logger.warn("value = " + Arrays.toString(localByteValue.get()));
         return localByteValue.get();
     }
 
@@ -205,11 +214,6 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-    private static long bytesToLong(byte[] bytes) {
-        localKey.get().position(0);
-        localKey.get().put(bytes, 0, 8).flip();
-        return localKey.get().getLong();
-    }
 
     private static int hash(long key) {
         return (int) (key & HASH_VALUE);
