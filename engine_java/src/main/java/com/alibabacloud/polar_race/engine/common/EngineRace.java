@@ -28,6 +28,7 @@ public class EngineRace extends AbstractEngine {
     private static final int MSG_COUNT = 1000000;
     //    64个线程写消息 6400w
     private static final int ALL_MSG_COUNT = 64000000;
+//    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
@@ -129,9 +130,11 @@ public class EngineRace extends AbstractEngine {
 //            System.out.println(keyMap.keys.length);
 //            System.out.println(keyMap.values.length);
 
-            for (int i = 7; i < 1000; i += 3) {
-                System.out.println(keyMap.get(i));
-            }
+//            for (long k : keyMap.keys) {
+//                if (k != 0) {
+//                    System.out.println(k + ":" + keyMap.get(k));
+//                }
+//            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -146,6 +149,7 @@ public class EngineRace extends AbstractEngine {
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" hash = "+hash);
 
+
         long off = offsets[hash].getAndAdd(VALUE_LEN);
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
@@ -156,7 +160,7 @@ public class EngineRace extends AbstractEngine {
             localKey.get().position(0);
             keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
             //对应的offset写入文件
-            localKey.get().putLong(0, off);
+            localKey.get().putLong(0, off + 1);
             localKey.get().position(0);
             keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
             //将value写入buffer
@@ -187,6 +191,7 @@ public class EngineRace extends AbstractEngine {
         if (off == 0) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
+//        System.out.println(off - 1);
         try {
             localBufferValue.get().position(0);
             fileChannels[hash].read(localBufferValue.get(), off - 1);

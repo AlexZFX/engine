@@ -18,7 +18,7 @@ public class smallReadTest {
         EngineRace race = new EngineRace();
 
         race.open("C:\\idea");
-        for (int i = 7; i < 1000; i += 3) {
+        for (int i = 7; i < 1000; i += 5) {
             byte[] bytes = race.read(Util.long2bytes(i));
             long key = Util.bytes2long(bytes);
             if (i != key) {
