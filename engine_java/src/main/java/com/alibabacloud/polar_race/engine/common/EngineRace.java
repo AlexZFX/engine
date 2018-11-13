@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class EngineRace extends AbstractEngine {
@@ -22,13 +21,15 @@ public class EngineRace extends AbstractEngine {
     private static final int KEY_LEN = 8;
     // offset 长度 8B
     private static final int OFF_LEN = 8;
+    // offset 长度 8B
+    private static final int KEY_AND_OFF_LEN = 16;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
     //    单个线程写入消息 100w
     private static final int MSG_COUNT = 1000000;
     //    64个线程写消息 6400w
     private static final int ALL_MSG_COUNT = 64000000;
-//    private static final int ALL_MSG_COUNT = 6400;
+    //    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
@@ -50,7 +51,7 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(KEY_LEN);
+            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
         }
     };
 
@@ -144,28 +145,26 @@ public class EngineRace extends AbstractEngine {
     }
 
     @Override
-    public synchronized void write(byte[] key, byte[] value) throws EngineException {
+    public void write(byte[] key, byte[] value) throws EngineException {
         //此时已经将key放到 localkey里面去了
         long numkey = Util.bytes2long(key);
         int hash = hash(numkey);
 //        logger.warn("key = "+ Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" hash = "+hash);
-
-
         long off = offsets[hash].getAndAdd(VALUE_LEN);
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
         keyMap.put(numkey, off + 1);
         try {
             //key写入文件
-            localKey.get().putLong(0, numkey);
+            localKey.get().putLong(0, numkey).putLong(8, off + 1);
             localKey.get().position(0);
-            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
-            //对应的offset写入文件
-            localKey.get().putLong(0, off + 1);
-            localKey.get().position(0);
-            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
+            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_AND_OFF_LEN));
+//            //对应的offset写入文件
+//            localKey.get().putLong(0, off + 1);
+//            localKey.get().position(0);
+//            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
             //将value写入buffer
             localBufferValue.get().position(0);
             localBufferValue.get().put(value, 0, VALUE_LEN);
