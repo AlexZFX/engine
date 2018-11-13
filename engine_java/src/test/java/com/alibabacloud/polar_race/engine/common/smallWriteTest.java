@@ -1,4 +1,4 @@
-package com.alibabacloud.polar_race.engine.common;
+/*package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import org.junit.Test;
@@ -12,11 +12,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * Author : Alex
- * Date : 2018/11/10 16:02
- * Description :
- */
 @RunWith(JUnit4.class)
 public class smallWriteTest {
 
@@ -33,3 +28,4 @@ public class smallWriteTest {
     }
 
 }
+*/

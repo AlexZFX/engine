@@ -1,15 +1,11 @@
-package com.alibabacloud.polar_race.engine.common;
+/*package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Author : Alex
- * Date : 2018/11/10 16:02
- * Description :
- */
+
 @RunWith(JUnit4.class)
 public class smallReadTest {
 
@@ -31,3 +27,4 @@ public class smallReadTest {
     }
 
 }
+*/
