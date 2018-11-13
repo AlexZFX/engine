@@ -26,8 +26,8 @@ public class WriteTest {
 
 
         Executor executor = Executors.newFixedThreadPool(64);
-        CountDownLatch countDownLatch = new CountDownLatch(640000);
-        for (int i = 0; i < 640000; i++) {
+        CountDownLatch countDownLatch = new CountDownLatch(64000);
+        for (int i = 0; i < 64000; i++) {
             int finalI = i;
             executor.execute(new Runnable() {
                 @Override

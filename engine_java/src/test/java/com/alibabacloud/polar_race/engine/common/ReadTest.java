@@ -25,7 +25,7 @@ public class ReadTest {
         race.open("C:\\idea");
 
 
-        for (int i = 7; i < 6400; i += 1000) {
+        for (int i = 0; i < 64000; i += 6) {
             int finalI = i;
             try {
                 byte[] bytes = race.read(Util.long2bytes(finalI));
@@ -33,7 +33,7 @@ public class ReadTest {
                 if (i != key) {
                     System.out.println(i + "读取不匹配");
                 }else {
-                    System.out.println("读取成功");
+//                    System.out.println("读取成功");
                 }
             } catch (EngineException e) {
                 e.printStackTrace();

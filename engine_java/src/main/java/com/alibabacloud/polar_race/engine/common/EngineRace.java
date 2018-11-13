@@ -135,13 +135,16 @@ public class EngineRace extends AbstractEngine {
 //                    System.out.println(k + ":" + keyMap.get(k));
 //                }
 //            }
+//            for (int i = 0; i < 100; i++) {
+//                System.out.println(keyMap.get(i));
+//            }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     @Override
-    public void write(byte[] key, byte[] value) throws EngineException {
+    public synchronized void write(byte[] key, byte[] value) throws EngineException {
         //此时已经将key放到 localkey里面去了
         long numkey = Util.bytes2long(key);
         int hash = hash(numkey);
@@ -179,9 +182,9 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = hash(numkey);
-        logger.warn("key = " + Arrays.toString(key));
-        logger.warn("numkey = " + numkey);
-        logger.warn(" hash = " + hash);
+//        logger.warn("key = " + Arrays.toString(key));
+//        logger.warn("numkey = " + numkey);
+//        logger.warn(" hash = " + hash);
 
 //        System.out.println(numkey);
 //        System.out.println(hash);
