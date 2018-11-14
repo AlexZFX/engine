@@ -74,15 +74,14 @@
 //                }
 //            });
 //        }
-//        for (int i = 10000; i < 12000; i+=100) {
-//            race.write(Util.long2bytes(i), Util.genvalue(i+1));
-//        }
 //        try {
 //            countDownLatch.await();
 //        } catch (InterruptedException e) {
 //            e.printStackTrace();
 //        }
-//
+//        for (int i = 10000; i < 12000; i+=100) {
+//            race.write(Util.long2bytes(i), Util.genvalue(i+1));
+//        }
 //        executor.shutdownNow();
 //        race.close();
 //        long end = System.currentTimeMillis();
