@@ -18,9 +18,10 @@
 //@RunWith(JUnit4.class)
 //public class EngineTest {
 //
-//    private static final String RACE_PATH = "/Users/zhangfengxiao/race";
+//    //    private static final String RACE_PATH = "/Users/zhangfengxiao/race";
+//    private static final String RACE_PATH = "C:\\idea";
 //
-//    private static final int WRITE_TIMES = 64000;
+//    private static final int WRITE_TIMES = 640000;
 //
 //    @Test
 //    public void read() throws EngineException {
@@ -30,18 +31,18 @@
 //        race.open(RACE_PATH);
 //
 //
-//        for (int i = 0; i < WRITE_TIMES; i+=6) {
+//        for (int i = 0; i < WRITE_TIMES; i += 3) {
 //            int finalI = i;
 //            try {
 //                byte[] bytes = race.read(Util.long2bytes(finalI));
 //                long key = Util.bytes2long(bytes);
-//                Assert.assertEquals(finalI,key);
-////                if (i != key) {
-////                    System.out.println("读取失败" + i);
-//////                    throw new EngineException(RetCodeEnum.IO_ERROR, "读取不匹配");
-////                } else {
+//                Assert.assertEquals(finalI, key);
+//                if (finalI != key) {
+//                    System.out.println("读取失败" + i);
+////                    throw new EngineException(RetCodeEnum.IO_ERROR, "读取不匹配");
+//                } else {
 ////                    System.out.println("读取成功" + i);
-////                }
+//                }
 //            } catch (EngineException e) {
 //                e.printStackTrace();
 //            }

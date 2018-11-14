@@ -77,6 +77,7 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void open(String path) throws EngineException {
+        logger.info("----------open----------");
         File file = new File(path);
         // 创建目录
         if (!file.exists()) {
@@ -229,6 +230,7 @@ public class EngineRace extends AbstractEngine {
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
         long off = keyMap.get(numkey);
+        logger.info("key: " + numkey + " - offset: " + off);
         if (off == 0) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
