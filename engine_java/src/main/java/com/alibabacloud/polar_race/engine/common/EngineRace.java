@@ -8,12 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -43,15 +43,23 @@ public class EngineRace extends AbstractEngine {
 
     private static final int HASH_VALUE = 0x7F;
 
+    private static final int HASH_KEY = 0x3F;
+
     private static FileChannel keyFileChannel;
 
     private static AtomicLong keyFileOffset;
 
     private static final LongLongHashMap keyMap = new LongLongHashMap(ALL_MSG_COUNT, 0.99f);
 
+    //key 文件的fileChannel
+    private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
+
+    private static AtomicLong[] keyOffsets = new AtomicLong[THREAD_NUM];
+
+    //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
 
-    private static AtomicLong[] offsets = new AtomicLong[FILE_COUNT];
+    private static AtomicLong[] valueOffsets = new AtomicLong[FILE_COUNT];
 
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -86,18 +94,53 @@ public class EngineRace extends AbstractEngine {
                 logger.info("创建文件目录成功：" + path);
             }
         }
-
-        //创建 FILE_COUNT个FileChannel 顺序写入
         RandomAccessFile randomAccessFile;
+        // file是一个目录时进行接下来的操作
         if (file.isDirectory()) {
+            try {
+                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
+                CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
+                //先构建keyFileChannel 和 初始化 map
+                for (int i = 0; i < THREAD_NUM; i++) {
+                    randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
+                    FileChannel channel = randomAccessFile.getChannel();
+                    keyFileChannels[i] = channel;
+                    keyOffsets[i] = new AtomicLong(randomAccessFile.length());
+                    if (!(keyOffsets[i].get() == 0)) {
+                        final long off = keyOffsets[i].get();
+                        final int finalI = i;
+                        executor.execute(() -> {
+                            int start = 0;
+                            while (start < off) {
+                                try {
+                                    localKey.get().position(0);
+                                    keyFileChannels[finalI].read(localKey.get(), start);
+                                    start += KEY_AND_OFF_LEN;
+                                    localKey.get().position(0);
+                                    keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                            countDownLatch.countDown();
+                        });
+                    }else {
+                        countDownLatch.countDown();
+                    }
+                }
+                countDownLatch.await();
+                executor.shutdownNow();
+            } catch (IOException | InterruptedException e) {
+                e.printStackTrace();
+            }
+            //创建 FILE_COUNT个FileChannel 供write顺序写入
             for (int i = 0; i < FILE_COUNT; i++) {
                 try {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-
                     FileChannel channel = randomAccessFile.getChannel();
                     fileChannels[i] = channel;
                     // 从 length处直接写入
-                    offsets[i] = new AtomicLong(randomAccessFile.length());
+                    valueOffsets[i] = new AtomicLong(randomAccessFile.length());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -105,93 +148,17 @@ public class EngineRace extends AbstractEngine {
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
         }
-        File keyFile = new File(path + File.separator + "key");
-        if (!keyFile.exists()) {
-            try {
-                keyFile.createNewFile();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-        // 从 index 文件建立 hashmap
-        try {
-            randomAccessFile = new RandomAccessFile(keyFile, "rw");
-            keyFileChannel = randomAccessFile.getChannel();
-            ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
-            keyFileOffset = new AtomicLong(randomAccessFile.length());
-            long maxOff = keyFileOffset.get();
-            // 此时文件内一共有 key 的数量
-            int num = (int) (maxOff / KEY_AND_OFF_LEN);
-            CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
-            //每个线程负责处理的key的个数
-            int jump = num / THREAD_NUM, offNum = 0;
-            // 64个线程分别处理读取工作
-            for (int i = 0; i < THREAD_NUM; i++) {
-                final int start = offNum;
-                offNum += jump;
-                int end = offNum;
-                if (i == THREAD_NUM - 1) {
-                    end = num;
-                }
-                final int finalEnd = end;
-                executor.execute(() -> {
-                    int pos = start * KEY_AND_OFF_LEN;
-                    for (int j = start; j < finalEnd; j++) {
-                        try {
-                            localKey.get().position(0);
-                            keyFileChannel.read(localKey.get(), pos);
-                            pos += KEY_AND_OFF_LEN;
-                            localKey.get().position(0);
-                            keyMap.put(localKey.get().getLong(), localKey.get().getLong());
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    countDownLatch.countDown();
-                });
-            }
-            countDownLatch.await();
-            executor.shutdownNow();
-//            ByteBuffer keyBuffer = ByteBuffer.allocateDirect(KEY_LEN);
-//            ByteBuffer offBuffer = ByteBuffer.allocateDirect(KEY_LEN);
-//            keyFileOffset = new AtomicLong(randomAccessFile.length());
-//            long temp = 0, maxOff = keyFileOffset.get();
-//            while (temp < maxOff) {
-//                keyBuffer.position(0);
-//                keyFileChannel.read(keyBuffer, temp);
-//                temp += KEY_LEN;
-//                offBuffer.position(0);
-//                keyFileChannel.read(offBuffer, temp);
-//                temp += KEY_LEN;
-//                keyBuffer.position(0);
-//                offBuffer.position(0);
-//                keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
-//            }
-//            System.out.println(keyMap.keys.length);
-//            System.out.println(keyMap.values.length);
-
-//            for (long k : keyMap.keys) {
-//                if (k != 0) {
-//                    System.out.println(k + ":" + keyMap.get(k));
-//                }
-//            }
-//            for (int i = 0; i < 100; i++) {
-//                System.out.println(keyMap.get(i));
-//            }
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-        }
     }
 
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
-        //此时已经将key放到 localkey里面去了
         long numkey = Util.bytes2long(key);
-        int hash = hash(numkey);
+        int hash = valueFileHash(numkey);
+        int keyHash = keyFileHash(numkey);
 //        logger.warn("key = "+ Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
-//        logger.warn(" hash = "+hash);
-        long off = offsets[hash].getAndAdd(VALUE_LEN);
+//        logger.warn(" valueFileHash = "+valueFileHash);
+        long off = valueOffsets[hash].getAndAdd(VALUE_LEN);
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
         keyMap.put(numkey, off + 1);
@@ -199,7 +166,7 @@ public class EngineRace extends AbstractEngine {
             //key写入文件
             localKey.get().putLong(0, numkey).putLong(8, off + 1);
             localKey.get().position(0);
-            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_AND_OFF_LEN));
+            keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
 //            //对应的offset写入文件
 //            localKey.get().putLong(0, off + 1);
 //            localKey.get().position(0);
@@ -219,13 +186,13 @@ public class EngineRace extends AbstractEngine {
     @Override
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
-        int hash = hash(numkey);
+        int hash = valueFileHash(numkey);
 //        logger.warn("key = " + Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
-//        logger.warn(" hash = " + hash);
+//        logger.warn(" valueFileHash = " + valueFileHash);
 
 //        System.out.println(numkey);
-//        System.out.println(hash);
+//        System.out.println(valueFileHash);
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
         long off = keyMap.get(numkey);
@@ -260,8 +227,11 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-
-    private static int hash(long key) {
+    private static int valueFileHash(long key) {
         return (int) (key & HASH_VALUE);
+    }
+
+    private static int keyFileHash(long key) {
+        return (int) (key & HASH_KEY);
     }
 }
