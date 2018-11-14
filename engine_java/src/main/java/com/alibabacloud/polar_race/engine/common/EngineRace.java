@@ -142,7 +142,9 @@ public class EngineRace extends AbstractEngine {
                             keyFileChannel.read(localKey.get(), pos);
                             pos += KEY_AND_OFF_LEN;
                             localKey.get().position(0);
-                            keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                            synchronized (this) {
+                                keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                            }
                             countDownLatch.countDown();
                         } catch (IOException e) {
                             e.printStackTrace();
