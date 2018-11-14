@@ -12,6 +12,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class EngineRace extends AbstractEngine {
@@ -21,8 +24,10 @@ public class EngineRace extends AbstractEngine {
     private static final int KEY_LEN = 8;
     // offset 长度 8B
     private static final int OFF_LEN = 8;
-    // offset 长度 8B
+    // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 16;
+    // 线程数量
+    private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
     //    单个线程写入消息 100w
@@ -47,7 +52,6 @@ public class EngineRace extends AbstractEngine {
 
     private static AtomicLong[] offsets = new AtomicLong[FILE_COUNT];
 
-    //线程私有的buffer，用于byte数组转long
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
@@ -112,22 +116,53 @@ public class EngineRace extends AbstractEngine {
         try {
             randomAccessFile = new RandomAccessFile(keyFile, "rw");
             keyFileChannel = randomAccessFile.getChannel();
-
-            ByteBuffer keyBuffer = ByteBuffer.allocate(KEY_LEN);
-            ByteBuffer offBuffer = ByteBuffer.allocate(KEY_LEN);
+            Executor executor = Executors.newFixedThreadPool(THREAD_NUM);
             keyFileOffset = new AtomicLong(randomAccessFile.length());
-            long temp = 0, maxOff = keyFileOffset.get();
-            while (temp < maxOff) {
-                keyBuffer.position(0);
-                keyFileChannel.read(keyBuffer, temp);
-                temp += KEY_LEN;
-                offBuffer.position(0);
-                keyFileChannel.read(offBuffer, temp);
-                temp += KEY_LEN;
-                keyBuffer.position(0);
-                offBuffer.position(0);
-                keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
+            long maxOff = keyFileOffset.get();
+            // 此时文件内一共有 key 的数量
+            int num = (int) (maxOff / KEY_AND_OFF_LEN);
+            //每个线程负责处理的key的个数
+            int jump = num / THREAD_NUM, offNum = 0;
+            // 64个线程分别处理读取工作
+            for (int i = 0; i < THREAD_NUM; i++) {
+                final int start = offNum;
+                offNum += jump;
+                int end = offNum;
+                if (i == THREAD_NUM - 1) {
+                    end = num;
+                }
+                final int finalEnd = end;
+                executor.execute(() -> {
+                    int pos = start * KEY_AND_OFF_LEN;
+                    for (int j = start; j < finalEnd; j++) {
+                        try {
+                            localKey.get().position(0);
+                            keyFileChannel.read(localKey.get(), pos);
+                            pos += KEY_AND_OFF_LEN;
+                            localKey.get().position(0);
+                            keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
             }
+            ((ExecutorService) executor).shutdownNow();
+//            ByteBuffer keyBuffer = ByteBuffer.allocateDirect(KEY_LEN);
+//            ByteBuffer offBuffer = ByteBuffer.allocateDirect(KEY_LEN);
+//            keyFileOffset = new AtomicLong(randomAccessFile.length());
+//            long temp = 0, maxOff = keyFileOffset.get();
+//            while (temp < maxOff) {
+//                keyBuffer.position(0);
+//                keyFileChannel.read(keyBuffer, temp);
+//                temp += KEY_LEN;
+//                offBuffer.position(0);
+//                keyFileChannel.read(offBuffer, temp);
+//                temp += KEY_LEN;
+//                keyBuffer.position(0);
+//                offBuffer.position(0);
+//                keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
+//            }
 //            System.out.println(keyMap.keys.length);
 //            System.out.println(keyMap.values.length);
 
