@@ -124,71 +124,78 @@ public class EngineRace extends AbstractEngine {
                 keyFileChannel = randomAccessFile.getChannel();
                 logger.info("从 index 文件建立 hashmap");
 
-//                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
-//                keyFileOffset = new AtomicLong(randomAccessFile.length());
-//                long maxOff = keyFileOffset.get();
-//                // 此时文件内一共有 key 的数量
-//                int num = (int) (maxOff / KEY_AND_OFF_LEN);
-//                CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
-//                //每个线程负责处理的key的个数
-//                int jump = num / THREAD_NUM, offNum = 0;
-//                // 64个线程分别处理读取工作
-//                for (int i = 0; i < THREAD_NUM; i++) {
-//                    final int start = offNum;
-//                    offNum += jump;
-//                    int end = offNum;
-//                    if (i == THREAD_NUM - 1) {
-//                        end = num;
-//                    }
-//                    final int finalEnd = end;
-//                    executor.execute(() -> {
-//                        int pos = start * KEY_AND_OFF_LEN;
-//                        for (int j = start; j < finalEnd; j++) {
-//                            try {
-//                                localKey.get().position(0);
-//                                keyFileChannel.read(localKey.get(), pos);
-//                                pos += KEY_AND_OFF_LEN;
-//                                localKey.get().position(0);
-//                                keyMap.put(localKey.get().getLong(), localKey.get().getLong());
-//                            } catch (IOException e) {
-//                                e.printStackTrace();
-//                            }
-//                        }
-//                        countDownLatch.countDown();
-//                    });
-//                }
-//                countDownLatch.await();
-//                executor.shutdownNow();
-
-
-                ByteBuffer keyBuffer = ByteBuffer.allocateDirect(KEY_LEN);
-                ByteBuffer offBuffer = ByteBuffer.allocateDirect(KEY_LEN);
+                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
                 keyFileOffset = new AtomicLong(randomAccessFile.length());
-                long temp = 0, maxOff = keyFileOffset.get();
-                while (temp < maxOff) {
-                    keyBuffer.position(0);
-                    keyFileChannel.read(keyBuffer, temp);
-                    temp += KEY_LEN;
-                    offBuffer.position(0);
-                    keyFileChannel.read(offBuffer, temp);
-                    temp += KEY_LEN;
-                    keyBuffer.position(0);
-                    offBuffer.position(0);
-                    keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
+                long maxOff = keyFileOffset.get();
+                // 此时文件内一共有 key 的数量
+                int num = (int) (maxOff / KEY_AND_OFF_LEN);
+                logger.info("文件内一共有 " + num + " key");
+                CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
+                //每个线程负责处理的key的个数
+                int jump = num / THREAD_NUM, offNum = 0;
+                logger.info("每个线程负责处理 " + jump + " key");
+                // 64个线程分别处理读取工作
+                for (int i = 0; i < THREAD_NUM; i++) {
+                    final int start = offNum;
+                    offNum += jump;
+                    int end = offNum;
+                    if (i == THREAD_NUM - 1) {
+                        end = num;
+                    }
+                    final int finalEnd = end;
+                    executor.execute(() -> {
+                        int pos = start * KEY_AND_OFF_LEN;
+                        for (int j = start; j < finalEnd; j++) {
+                            try {
+                                localKey.get().position(0);
+                                keyFileChannel.read(localKey.get(), pos);
+                                pos += KEY_AND_OFF_LEN;
+                                localKey.get().position(0);
+                                keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        countDownLatch.countDown();
+                    });
                 }
+                countDownLatch.await();
+                executor.shutdownNow();
+
+
+//                ByteBuffer keyBuffer = ByteBuffer.allocateDirect(KEY_LEN);
+//                ByteBuffer offBuffer = ByteBuffer.allocateDirect(KEY_LEN);
+//                keyFileOffset = new AtomicLong(randomAccessFile.length());
+//                long temp = 0, maxOff = keyFileOffset.get();
+//                while (temp < maxOff) {
+//                    keyBuffer.position(0);
+//                    keyFileChannel.read(keyBuffer, temp);
+//                    temp += KEY_LEN;
+//                    offBuffer.position(0);
+//                    keyFileChannel.read(offBuffer, temp);
+//                    temp += KEY_LEN;
+//                    keyBuffer.position(0);
+//                    offBuffer.position(0);
+//                    keyMap.put(keyBuffer.getLong(), offBuffer.getLong());
+//                }
 
 //                System.out.println(keyMap.keys.length);
 //                System.out.println(keyMap.values.length);
 //
-//            for (long k : keyMap.keys) {
-//                if (k != 0) {
-//                    System.out.println(k + ":" + keyMap.get(k));
-//                }
-//            }
+                int cnt = 0;
+                for (long k : keyMap.keys) {
+                    if (k != 0) {
+//                        System.out.println(k + ":" + keyMap.get(k));
+                        cnt++;
+                    }
+                }
+                logger.info("keymap 中一共有 " + cnt + " key");
 //            for (int i = 0; i < 100; i++) {
 //                System.out.println(keyMap.get(i));
 //            }
             } catch (IOException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }

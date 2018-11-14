@@ -74,9 +74,9 @@
 //                }
 //            });
 //        }
-////        for (int i = 10000; i < 12000; i+=100) {
-////            race.write(Util.long2bytes(i), Util.genvalue(i+1));
-////        }
+//        for (int i = 10000; i < 12000; i+=100) {
+//            race.write(Util.long2bytes(i), Util.genvalue(i+1));
+//        }
 //        try {
 //            countDownLatch.await();
 //        } catch (InterruptedException e) {
