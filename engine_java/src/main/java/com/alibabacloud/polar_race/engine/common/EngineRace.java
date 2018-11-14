@@ -109,50 +109,55 @@ public class EngineRace extends AbstractEngine {
         File keyFile = new File(path + File.separator + "key");
         if (!keyFile.exists()) {
             try {
+                logger.info("新建 index 文件");
                 keyFile.createNewFile();
+                randomAccessFile = new RandomAccessFile(keyFile, "rw");
+                keyFileChannel = randomAccessFile.getChannel();
+                keyFileOffset = new AtomicLong(0);
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
-        // 从 index 文件建立 hashmap
-        try {
-            randomAccessFile = new RandomAccessFile(keyFile, "rw");
-            keyFileChannel = randomAccessFile.getChannel();
-            ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
-            keyFileOffset = new AtomicLong(randomAccessFile.length());
-            long maxOff = keyFileOffset.get();
-            // 此时文件内一共有 key 的数量
-            int num = (int) (maxOff / KEY_AND_OFF_LEN);
-            CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
-            //每个线程负责处理的key的个数
-            int jump = num / THREAD_NUM, offNum = 0;
-            // 64个线程分别处理读取工作
-            for (int i = 0; i < THREAD_NUM; i++) {
-                final int start = offNum;
-                offNum += jump;
-                int end = offNum;
-                if (i == THREAD_NUM - 1) {
-                    end = num;
-                }
-                final int finalEnd = end;
-                executor.execute(() -> {
-                    int pos = start * KEY_AND_OFF_LEN;
-                    for (int j = start; j < finalEnd; j++) {
-                        try {
-                            localKey.get().position(0);
-                            keyFileChannel.read(localKey.get(), pos);
-                            pos += KEY_AND_OFF_LEN;
-                            localKey.get().position(0);
-                            keyMap.put(localKey.get().getLong(), localKey.get().getLong());
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
+        } else {
+            // 从 index 文件建立 hashmap
+            try {
+                randomAccessFile = new RandomAccessFile(keyFile, "rw");
+                keyFileChannel = randomAccessFile.getChannel();
+                logger.info("从 index 文件建立 hashmap");
+                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
+                keyFileOffset = new AtomicLong(randomAccessFile.length());
+                long maxOff = keyFileOffset.get();
+                // 此时文件内一共有 key 的数量
+                int num = (int) (maxOff / KEY_AND_OFF_LEN);
+                CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
+                //每个线程负责处理的key的个数
+                int jump = num / THREAD_NUM, offNum = 0;
+                // 64个线程分别处理读取工作
+                for (int i = 0; i < THREAD_NUM; i++) {
+                    final int start = offNum;
+                    offNum += jump;
+                    int end = offNum;
+                    if (i == THREAD_NUM - 1) {
+                        end = num;
                     }
-                    countDownLatch.countDown();
-                });
-            }
-            countDownLatch.await();
-            executor.shutdownNow();
+                    final int finalEnd = end;
+                    executor.execute(() -> {
+                        int pos = start * KEY_AND_OFF_LEN;
+                        for (int j = start; j < finalEnd; j++) {
+                            try {
+                                localKey.get().position(0);
+                                keyFileChannel.read(localKey.get(), pos);
+                                pos += KEY_AND_OFF_LEN;
+                                localKey.get().position(0);
+                                keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        countDownLatch.countDown();
+                    });
+                }
+                countDownLatch.await();
+                executor.shutdownNow();
 //            ByteBuffer keyBuffer = ByteBuffer.allocateDirect(KEY_LEN);
 //            ByteBuffer offBuffer = ByteBuffer.allocateDirect(KEY_LEN);
 //            keyFileOffset = new AtomicLong(randomAccessFile.length());
@@ -179,8 +184,9 @@ public class EngineRace extends AbstractEngine {
 //            for (int i = 0; i < 100; i++) {
 //                System.out.println(keyMap.get(i));
 //            }
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+            } catch (IOException | InterruptedException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -230,7 +236,7 @@ public class EngineRace extends AbstractEngine {
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
         long off = keyMap.get(numkey);
-        logger.info("key: " + numkey + " - offset: " + off);
+//        logger.info("key: " + numkey + " - offset: " + off);
         if (off == 0) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
