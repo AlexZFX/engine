@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -116,11 +117,12 @@ public class EngineRace extends AbstractEngine {
         try {
             randomAccessFile = new RandomAccessFile(keyFile, "rw");
             keyFileChannel = randomAccessFile.getChannel();
-            Executor executor = Executors.newFixedThreadPool(THREAD_NUM);
+            ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
             keyFileOffset = new AtomicLong(randomAccessFile.length());
             long maxOff = keyFileOffset.get();
             // 此时文件内一共有 key 的数量
             int num = (int) (maxOff / KEY_AND_OFF_LEN);
+            CountDownLatch countDownLatch = new CountDownLatch(num);
             //每个线程负责处理的key的个数
             int jump = num / THREAD_NUM, offNum = 0;
             // 64个线程分别处理读取工作
@@ -141,13 +143,15 @@ public class EngineRace extends AbstractEngine {
                             pos += KEY_AND_OFF_LEN;
                             localKey.get().position(0);
                             keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                            countDownLatch.countDown();
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
                     }
                 });
             }
-            ((ExecutorService) executor).shutdownNow();
+            countDownLatch.await();
+            executor.shutdownNow();
 //            ByteBuffer keyBuffer = ByteBuffer.allocateDirect(KEY_LEN);
 //            ByteBuffer offBuffer = ByteBuffer.allocateDirect(KEY_LEN);
 //            keyFileOffset = new AtomicLong(randomAccessFile.length());
@@ -174,7 +178,7 @@ public class EngineRace extends AbstractEngine {
 //            for (int i = 0; i < 100; i++) {
 //                System.out.println(keyMap.get(i));
 //            }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
     }
