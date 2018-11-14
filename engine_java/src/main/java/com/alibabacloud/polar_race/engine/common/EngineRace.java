@@ -122,7 +122,7 @@ public class EngineRace extends AbstractEngine {
             long maxOff = keyFileOffset.get();
             // 此时文件内一共有 key 的数量
             int num = (int) (maxOff / KEY_AND_OFF_LEN);
-            CountDownLatch countDownLatch = new CountDownLatch(num);
+            CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
             //每个线程负责处理的key的个数
             int jump = num / THREAD_NUM, offNum = 0;
             // 64个线程分别处理读取工作
@@ -142,14 +142,12 @@ public class EngineRace extends AbstractEngine {
                             keyFileChannel.read(localKey.get(), pos);
                             pos += KEY_AND_OFF_LEN;
                             localKey.get().position(0);
-                            synchronized (this) {
-                                keyMap.put(localKey.get().getLong(), localKey.get().getLong());
-                            }
-                            countDownLatch.countDown();
+                            keyMap.put(localKey.get().getLong(), localKey.get().getLong());
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
                     }
+                    countDownLatch.countDown();
                 });
             }
             countDownLatch.await();
