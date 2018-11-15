@@ -119,7 +119,9 @@ public class EngineRace extends AbstractEngine {
                                     keyFileChannels[finalI].read(localKey.get(), start);
                                     start += KEY_AND_OFF_LEN;
                                     localKey.get().position(0);
-                                    keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                                    synchronized (keyMap) {
+                                        keyMap.put(localKey.get().getLong(), localKey.get().getLong());
+                                    }
                                 } catch (IOException e) {
                                     e.printStackTrace();
                                 }
@@ -163,10 +165,10 @@ public class EngineRace extends AbstractEngine {
         long off = valueOffsets[hash].getAndAdd(VALUE_LEN);
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
-        keyMap.put(numkey, off + 1);
+        keyMap.put(numkey, off);
         try {
             //key写入文件
-            localKey.get().putLong(0, numkey).putLong(8, off + 1);
+            localKey.get().putLong(0, numkey).putLong(8, off);
             localKey.get().position(0);
             keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
 //            //对应的offset写入文件
@@ -197,14 +199,14 @@ public class EngineRace extends AbstractEngine {
 //        System.out.println(valueFileHash);
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
-        long off = keyMap.get(numkey);
-        if (off == 0) {
+        long off = keyMap.getOrDefault(numkey, -1);
+        if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
 //        System.out.println(off - 1);
         try {
             localBufferValue.get().position(0);
-            fileChannels[hash].read(localBufferValue.get(), off - 1);
+            fileChannels[hash].read(localBufferValue.get(), off);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
