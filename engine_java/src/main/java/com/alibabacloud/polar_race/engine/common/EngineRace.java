@@ -98,14 +98,16 @@ public class EngineRace extends AbstractEngine {
         // file是一个目录时进行接下来的操作
         if (file.isDirectory()) {
             try {
-                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
-                CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 //先构建keyFileChannel 和 初始化 map
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
                     keyOffsets[i] = new AtomicLong(randomAccessFile.length());
+                }
+                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
+                CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
+                for (int i = 0; i < THREAD_NUM; i++) {
                     if (!(keyOffsets[i].get() == 0)) {
                         final long off = keyOffsets[i].get();
                         final int finalI = i;
@@ -124,7 +126,7 @@ public class EngineRace extends AbstractEngine {
                             }
                             countDownLatch.countDown();
                         });
-                    }else {
+                    } else {
                         countDownLatch.countDown();
                     }
                 }
