@@ -191,7 +191,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), off << SHIFT_NUM);
+            fileChannels[hash].write(localBufferValue.get(), ((long)off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -211,7 +211,7 @@ public class EngineRace extends AbstractEngine {
 //        System.out.println(valueFileHash);
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
-        int off = keyMap[keyHash].getOrDefault(numkey, -1);
+        long off = keyMap[keyHash].getOrDefault(numkey, -1);
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
