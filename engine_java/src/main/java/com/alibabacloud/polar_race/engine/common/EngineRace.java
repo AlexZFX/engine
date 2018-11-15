@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +39,8 @@ public class EngineRace extends AbstractEngine {
     private static final int PER_MAP_COUNT = 1024000;
 
     private static final int SHIFT_NUM = 12;
+    //mmap每次映射的字节数
+    private static final int KEY_SHIFT_SIZE = SHIFT_NUM * 320;
 
     //    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
@@ -53,7 +56,7 @@ public class EngineRace extends AbstractEngine {
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.8);
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.95);
         }
     }
 
@@ -62,17 +65,19 @@ public class EngineRace extends AbstractEngine {
 
     private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
+    private static MappedByteBuffer[] keyByteBuffers = new MappedByteBuffer[THREAD_NUM];
+
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
 
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
-    private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
-        @Override
-        protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
-        }
-    };
+//    private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
+//        @Override
+//        protected ByteBuffer initialValue() throws Exception {
+//            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
+//        }
+//    };
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -110,6 +115,7 @@ public class EngineRace extends AbstractEngine {
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
                     keyOffsets[i] = new AtomicInteger((int) randomAccessFile.length());
+                    keyByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, keyOffsets[i].get(), KEY_SHIFT_SIZE);
                 }
                 ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
@@ -121,18 +127,16 @@ public class EngineRace extends AbstractEngine {
                             int start = 0;
                             long key;
                             int keyHash;
-                            while (start < off) {
-                                try {
-                                    localKey.get().position(0);
-                                    keyFileChannels[finalI].read(localKey.get(), start);
+                            try {
+                                MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, start, keyFileChannels[finalI].size());
+                                while (start < off) {
                                     start += KEY_AND_OFF_LEN;
-                                    localKey.get().position(0);
-                                    key = localKey.get().getLong();
+                                    key = mappedByteBuffer.getLong();
                                     keyHash = keyFileHash(key);
-                                    keyMap[keyHash].put(key, localKey.get().getInt());
-                                } catch (IOException e) {
-                                    e.printStackTrace();
+                                    keyMap[keyHash].put(key, mappedByteBuffer.getInt());
                                 }
+                            } catch (IOException e) {
+                                e.printStackTrace();
                             }
                             countDownLatch.countDown();
                         });
@@ -167,18 +171,14 @@ public class EngineRace extends AbstractEngine {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
         int keyHash = keyFileHash(numkey);
-//        logger.warn("key = "+ Arrays.toString(key));
-//        logger.warn("numkey = " + numkey);
-//        logger.warn(" valueFileHash = "+valueFileHash);
         int off = valueOffsets[hash].getAndIncrement();
-//        System.out.println(numkey + " - " + (off + 1));
-//        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
-//        keyMap[keyHash].put(numkey, off);
         try {
+            if (!keyByteBuffers[keyHash].hasRemaining()) {
+                keyByteBuffers[keyHash] = keyFileChannels[keyHash].map(FileChannel.MapMode.READ_WRITE, keyOffsets[keyHash].get(), KEY_SHIFT_SIZE);
+            }
             //key写入文件
-            localKey.get().putLong(0, numkey).putInt(8, off);
-            localKey.get().position(0);
-            keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
+            keyByteBuffers[keyHash].putLong(numkey).putInt(off);
+            keyOffsets[keyHash].addAndGet(KEY_AND_OFF_LEN);
 //            //对应的offset写入文件
 //            localKey.get().putLong(0, off + 1);
 //            localKey.get().position(0);
@@ -188,7 +188,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), ((long)off) << SHIFT_NUM);
+            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
