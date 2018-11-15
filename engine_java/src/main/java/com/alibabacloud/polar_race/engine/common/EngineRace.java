@@ -225,6 +225,12 @@ public class EngineRace extends AbstractEngine {
         for (int i = 0; i < FILE_COUNT; i++) {
             try {
                 fileChannels[i].close();
+                for (int j = 0; j < keyOffsets.length; j++) {
+                    logger.error("第" + j + "个key文件大小" + keyOffsets[j]);
+                }
+                for (int j = 0; j < valueOffsets.length; j++) {
+                    logger.error("第" + j + "个value文件大小" + valueOffsets[j]);
+                }
             } catch (IOException e) {
                 logger.error("close error");
             }
