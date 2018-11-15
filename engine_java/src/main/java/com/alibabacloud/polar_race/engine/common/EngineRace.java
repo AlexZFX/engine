@@ -2,6 +2,7 @@ package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
+import com.carrotsearch.hppc.LongIntHashMap;
 import com.carrotsearch.hppc.LongLongHashMap;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
@@ -16,6 +17,7 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class EngineRace extends AbstractEngine {
@@ -26,7 +28,7 @@ public class EngineRace extends AbstractEngine {
     // offset 长度 8B
     private static final int OFF_LEN = 8;
     // key+offset 长度 16B
-    private static final int KEY_AND_OFF_LEN = 16;
+    private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
     private static final int THREAD_NUM = 64;
     // value 长度 4K
@@ -35,6 +37,11 @@ public class EngineRace extends AbstractEngine {
     private static final int MSG_COUNT = 1000000;
     //    64个线程写消息 6400w
     private static final int ALL_MSG_COUNT = 64000000;
+    //每个map存储的key数量
+    private static final int PER_MAP_COUNT = 1024000;
+
+    private static final int SHIFT_NUM = 12;
+
     //    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
@@ -45,21 +52,23 @@ public class EngineRace extends AbstractEngine {
 
     private static final int HASH_KEY = 0x3F;
 
-    private static FileChannel keyFileChannel;
+    private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
 
-    private static AtomicLong keyFileOffset;
-
-    private static final LongLongHashMap keyMap = new LongLongHashMap(ALL_MSG_COUNT, 0.99f);
+    static {
+        for (int i = 0; i < THREAD_NUM; i++) {
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.95);
+        }
+    }
 
     //key 文件的fileChannel
     private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
 
-    private static AtomicLong[] keyOffsets = new AtomicLong[THREAD_NUM];
+    private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
 
-    private static AtomicLong[] valueOffsets = new AtomicLong[FILE_COUNT];
+    private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -103,7 +112,7 @@ public class EngineRace extends AbstractEngine {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
-                    keyOffsets[i] = new AtomicLong(randomAccessFile.length());
+                    keyOffsets[i] = new AtomicInteger((int) randomAccessFile.length());
                 }
                 ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
@@ -113,15 +122,17 @@ public class EngineRace extends AbstractEngine {
                         final int finalI = i;
                         executor.execute(() -> {
                             int start = 0;
+                            long key;
+                            int keyHash;
                             while (start < off) {
                                 try {
                                     localKey.get().position(0);
                                     keyFileChannels[finalI].read(localKey.get(), start);
                                     start += KEY_AND_OFF_LEN;
                                     localKey.get().position(0);
-                                    synchronized (keyMap) {
-                                        keyMap.put(localKey.get().getLong(), localKey.get().getLong());
-                                    }
+                                    key = localKey.get().getLong();
+                                    keyHash = keyFileHash(key);
+                                    keyMap[keyHash].put(key, localKey.get().getInt());
                                 } catch (IOException e) {
                                     e.printStackTrace();
                                 }
@@ -144,7 +155,7 @@ public class EngineRace extends AbstractEngine {
                     FileChannel channel = randomAccessFile.getChannel();
                     fileChannels[i] = channel;
                     // 从 length处直接写入
-                    valueOffsets[i] = new AtomicLong(randomAccessFile.length());
+                    valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -162,13 +173,13 @@ public class EngineRace extends AbstractEngine {
 //        logger.warn("key = "+ Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" valueFileHash = "+valueFileHash);
-        long off = valueOffsets[hash].getAndAdd(VALUE_LEN);
+        int off = valueOffsets[hash].getAndIncrement();
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
-        keyMap.put(numkey, off);
+        keyMap[keyHash].put(numkey, off);
         try {
             //key写入文件
-            localKey.get().putLong(0, numkey).putLong(8, off);
+            localKey.get().putLong(0, numkey).putInt(8, off);
             localKey.get().position(0);
             keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
 //            //对应的offset写入文件
@@ -180,7 +191,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), off);
+            fileChannels[hash].write(localBufferValue.get(), off << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -191,6 +202,7 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
+        int keyHash = keyFileHash(numkey);
 //        logger.warn("key = " + Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" valueFileHash = " + valueFileHash);
@@ -199,14 +211,14 @@ public class EngineRace extends AbstractEngine {
 //        System.out.println(valueFileHash);
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
-        long off = keyMap.getOrDefault(numkey, -1);
+        int off = keyMap[keyHash].getOrDefault(numkey, -1);
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
 //        System.out.println(off - 1);
         try {
             localBufferValue.get().position(0);
-            fileChannels[hash].read(localBufferValue.get(), off);
+            fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
@@ -225,12 +237,6 @@ public class EngineRace extends AbstractEngine {
         for (int i = 0; i < FILE_COUNT; i++) {
             try {
                 fileChannels[i].close();
-                for (int j = 0; j < keyOffsets.length; j++) {
-                    logger.error("第" + j + "个key文件大小" + keyOffsets[j]);
-                }
-                for (int j = 0; j < valueOffsets.length; j++) {
-                    logger.error("第" + j + "个value文件大小" + valueOffsets[j]);
-                }
             } catch (IOException e) {
                 logger.error("close error");
             }
