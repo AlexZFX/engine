@@ -3,13 +3,11 @@ package com.alibabacloud.polar_race.engine.common;
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
 import com.carrotsearch.hppc.LongIntHashMap;
-import com.carrotsearch.hppc.LongLongHashMap;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -18,7 +16,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class EngineRace extends AbstractEngine {
 
@@ -176,7 +173,7 @@ public class EngineRace extends AbstractEngine {
         int off = valueOffsets[hash].getAndIncrement();
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
-        keyMap[keyHash].put(numkey, off);
+//        keyMap[keyHash].put(numkey, off);
         try {
             //key写入文件
             localKey.get().putLong(0, numkey).putInt(8, off);
