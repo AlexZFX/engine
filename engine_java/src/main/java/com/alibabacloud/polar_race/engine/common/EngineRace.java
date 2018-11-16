@@ -158,6 +158,7 @@ public class EngineRace extends AbstractEngine {
                     fileChannels[i] = channel;
                     // 从 length处直接写入
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
+                    logger.error("256个文件，第【" + i + "】个data文件打开时大小为" + randomAccessFile.length());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -238,14 +239,12 @@ public class EngineRace extends AbstractEngine {
     public void close() {
         try {
             for (int i = 0; i < THREAD_NUM; i++) {
-                logger.error("key文件 " + i + "大小为 " + keyFileChannels[i].size() / 1024 + "KB");
+//                logger.error("key文件 " + i + "大小为 " + keyFileChannels[i].size() / 1024 + "KB");
                 keyFileChannels[i].close();
             }
             for (int i = 0; i < FILE_COUNT; i++) {
-
-                logger.error("data文件 " + i + "大小为 " + fileChannels[i].size() / 1024 / 1024 + "M");
+//                logger.error("data文件 " + i + "大小为 " + fileChannels[i].size() / 1024 / 1024 + "M");
                 fileChannels[i].close();
-
             }
         } catch (IOException e) {
             logger.error("close error");
