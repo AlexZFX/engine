@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -30,7 +31,7 @@ public class EngineRace extends AbstractEngine {
     private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
-//    //    单个线程写入消息 100w
+    //    //    单个线程写入消息 100w
 //    private static final int MSG_COUNT = 1000000;
 //    //    64个线程写消息 6400w
 //    private static final int ALL_MSG_COUNT = 64000000;
@@ -60,10 +61,12 @@ public class EngineRace extends AbstractEngine {
     //key 文件的fileChannel
     private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
 
-    private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
+//    private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
+
+    private static MappedByteBuffer[] keyByteBuffers = new MappedByteBuffer[THREAD_NUM];
 
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
@@ -104,18 +107,37 @@ public class EngineRace extends AbstractEngine {
         // file是一个目录时进行接下来的操作
         if (file.isDirectory()) {
             try {
+
+                //创建 FILE_COUNT个FileChannel 供write顺序写入
+                for (int i = 0; i < FILE_COUNT; i++) {
+                    try {
+                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+                        FileChannel channel = randomAccessFile.getChannel();
+                        fileChannels[i] = channel;
+                        // 从 length处直接写入
+                        valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+
                 //先构建keyFileChannel 和 初始化 map
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
-                    keyOffsets[i] = new AtomicInteger((int) randomAccessFile.length());
+                    keyByteBuffers[i] = keyFileChannels[i].map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 12);
+
+//                    keyOffsets[i] = new AtomicInteger((int) randomAccessFile.length());
                 }
                 ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 for (int i = 0; i < THREAD_NUM; i++) {
-                    if (!(keyOffsets[i].get() == 0)) {
-                        final long off = keyOffsets[i].get();
+//                    if (!(keyOffsets[i].get() == 0)) {
+                    if (!((valueOffsets[i].get() + valueOffsets[i + 64].get()) == 0)) {
+//                        final long off = valueOffsets[i].get();
+                        final long off = (valueOffsets[i].get() + valueOffsets[i + 64].get()) * 12;
                         final int finalI = i;
                         executor.execute(() -> {
                             int start = 0;
@@ -145,18 +167,7 @@ public class EngineRace extends AbstractEngine {
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
-            //创建 FILE_COUNT个FileChannel 供write顺序写入
-            for (int i = 0; i < FILE_COUNT; i++) {
-                try {
-                    randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                    FileChannel channel = randomAccessFile.getChannel();
-                    fileChannels[i] = channel;
-                    // 从 length处直接写入
-                    valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
         }
@@ -171,14 +182,18 @@ public class EngineRace extends AbstractEngine {
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" valueFileHash = "+valueFileHash);
         int off = valueOffsets[hash].getAndIncrement();
+        int keyoff = off + valueOffsets[(hash + 64) % 128].get();
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
 //        keyMap[keyHash].put(numkey, off);
         try {
             //key写入文件
-            localKey.get().putLong(0, numkey).putInt(8, off);
-            localKey.get().position(0);
-            keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
+//            localKey.get().putLong(0, numkey).putInt(8, off);
+//            localKey.get().position(0);
+//            keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
+//            keyFileChannels[keyHash].write(localKey.get(), valueOffsets[keyHash].get(KEY_AND_OFF_LEN));
+            keyByteBuffers[keyHash].position(keyoff * 12);
+            keyByteBuffers[keyHash].putLong(numkey).putInt(off);
 //            //对应的offset写入文件
 //            localKey.get().putLong(0, off + 1);
 //            localKey.get().position(0);
@@ -188,7 +203,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), ((long)off) << SHIFT_NUM);
+            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
