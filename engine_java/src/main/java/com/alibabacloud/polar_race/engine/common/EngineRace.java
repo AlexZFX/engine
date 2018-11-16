@@ -59,7 +59,7 @@ public class EngineRace extends AbstractEngine {
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.95);
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.99);
         }
     }
 
