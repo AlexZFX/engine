@@ -21,19 +21,19 @@ public class EngineRace extends AbstractEngine {
 
     private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
     // key 长度 8B
-    private static final int KEY_LEN = 8;
-    // offset 长度 8B
-    private static final int OFF_LEN = 8;
-    // key+offset 长度 16B
+//    private static final int KEY_LEN = 8;
+//    // offset 长度 8B
+//    private static final int OFF_LEN = 8;
+    // key+offset 长度 12B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
     private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
-    //    单个线程写入消息 100w
-    private static final int MSG_COUNT = 1000000;
-    //    64个线程写消息 6400w
-    private static final int ALL_MSG_COUNT = 64000000;
+//    //    单个线程写入消息 100w
+//    private static final int MSG_COUNT = 1000000;
+//    //    64个线程写消息 6400w
+//    private static final int ALL_MSG_COUNT = 64000000;
     //每个map存储的key数量
     private static final int PER_MAP_COUNT = 1024000;
 
@@ -41,7 +41,7 @@ public class EngineRace extends AbstractEngine {
 
     //    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
-    private static final int MSG_COUNT_PERFILE = 4000000;
+//    private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
     private static final int FILE_COUNT = 128;
 
@@ -53,7 +53,7 @@ public class EngineRace extends AbstractEngine {
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.8);
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.96);
         }
     }
 
