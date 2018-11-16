@@ -235,7 +235,14 @@ public class EngineRace extends AbstractEngine {
             try {
                 fileChannels[i].close();
             } catch (IOException e) {
-                logger.error("close error");
+                logger.error("value file close error");
+            }
+        }
+        for (int i = 0; i < THREAD_NUM; i++) {
+            try {
+                keyFileChannels[i].close();
+            } catch (IOException e) {
+                logger.error("key file close error");
             }
         }
     }
