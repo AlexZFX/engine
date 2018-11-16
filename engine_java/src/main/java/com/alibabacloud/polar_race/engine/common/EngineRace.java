@@ -12,12 +12,9 @@ import sun.nio.ch.DirectBuffer;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -49,9 +46,9 @@ public class EngineRace extends AbstractEngine {
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
-    private static final int FILE_COUNT = 128;
+    private static final int FILE_COUNT = 256;
 
-    private static final int HASH_VALUE = 0x7F;
+    private static final int HASH_VALUE = 0xFF;
 
     private static final int HASH_KEY = 0x3F;
 
@@ -239,12 +236,19 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
-        for (int i = 0; i < FILE_COUNT; i++) {
-            try {
-                fileChannels[i].close();
-            } catch (IOException e) {
-                logger.error("close error");
+        try {
+            for (int i = 0; i < THREAD_NUM; i++) {
+                logger.error("key文件 " + i + "大小为 " + keyFileChannels[i].size() / 1024 + "KB");
+                keyFileChannels[i].close();
             }
+            for (int i = 0; i < FILE_COUNT; i++) {
+
+                logger.error("data文件 " + i + "大小为 " + fileChannels[i].size() / 1024 / 1024 + "M");
+                fileChannels[i].close();
+
+            }
+        } catch (IOException e) {
+            logger.error("close error");
         }
     }
 
