@@ -6,13 +6,18 @@ import com.carrotsearch.hppc.LongIntHashMap;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.misc.Cleaner;
+import sun.nio.ch.DirectBuffer;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -133,6 +138,7 @@ public class EngineRace extends AbstractEngine {
                                     keyHash = keyFileHash(key);
                                     keyMap[keyHash].put(key, mappedByteBuffer.getInt());
                                 }
+                                unmap(mappedByteBuffer);
                                 countDownLatch.countDown();
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -249,4 +255,12 @@ public class EngineRace extends AbstractEngine {
     private static int keyFileHash(long key) {
         return (int) (key & HASH_KEY);
     }
+
+    private void unmap(MappedByteBuffer var0) {
+        Cleaner var1 = ((DirectBuffer) var0).cleaner();
+        if (var1 != null) {
+            var1.clean();
+        }
+    }
+
 }
