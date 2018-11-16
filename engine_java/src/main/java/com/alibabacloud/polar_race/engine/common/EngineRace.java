@@ -49,9 +49,9 @@ public class EngineRace extends AbstractEngine {
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
-    private static final int FILE_COUNT = 128;
+    private static final int FILE_COUNT = 256;
 
-    private static final int HASH_VALUE = 0x7F;
+    private static final int HASH_VALUE = 0xFF;
 
     private static final int HASH_KEY = 0x3F;
 
@@ -72,6 +72,8 @@ public class EngineRace extends AbstractEngine {
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
 
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
+
+    private static MappedByteBuffer[] valueMappedByteBuffer = new MappedByteBuffer[FILE_COUNT];
 
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -161,6 +163,7 @@ public class EngineRace extends AbstractEngine {
                     fileChannels[i] = channel;
                     // 从 length处直接写入
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
+                    valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -196,7 +199,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
+            fileChannels[hash].write(localBufferValue.get(), off << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -221,14 +224,12 @@ public class EngineRace extends AbstractEngine {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
 //        System.out.println(off - 1);
-        try {
-            localBufferValue.get().position(0);
-            fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
-        } catch (IOException e) {
-            throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
-        }
-        localBufferValue.get().position(0);
-        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+        //            localBufferValue.get().position(0);
+//            fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
+        valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
+        valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
+        //        localBufferValue.get().position(0);
+//        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
 //        logger.warn("value = " + Arrays.toString(localByteValue.get()));
         return localByteValue.get();
     }
