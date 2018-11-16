@@ -72,6 +72,8 @@ public class EngineRace extends AbstractEngine {
 
     private static MappedByteBuffer[] valueMappedByteBuffer = new MappedByteBuffer[FILE_COUNT];
 
+    private static boolean USE_MMAP = true;
+
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
@@ -162,7 +164,11 @@ public class EngineRace extends AbstractEngine {
                     // 从 length处直接写入
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
                     logger.error("data 文件 " + i + "的大小为" + randomAccessFile.length());
-                    valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, randomAccessFile.length());
+                    if (randomAccessFile.length() < Integer.MAX_VALUE) {
+                        valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, randomAccessFile.length());
+                    } else {
+                        USE_MMAP = false;
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -222,13 +228,19 @@ public class EngineRace extends AbstractEngine {
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
-//        System.out.println(off - 1);
-        //            localBufferValue.get().position(0);
-//            fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
-        valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
-        valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
-        //        localBufferValue.get().position(0);
-//        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+        if (USE_MMAP) {
+            valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
+            valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
+        } else {
+            try {
+                localBufferValue.get().position(0);
+                fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
+                localBufferValue.get().position(0);
+                localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 //        logger.warn("value = " + Arrays.toString(localByteValue.get()));
         return localByteValue.get();
     }
@@ -239,12 +251,15 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
-        for (int i = 0; i < FILE_COUNT; i++) {
-            try {
-                fileChannels[i].close();
-            } catch (IOException e) {
-                logger.error("close error");
+        try {
+            for (int i = 0; i < THREAD_NUM; i++) {
+                keyFileChannels[i].close();
             }
+            for (int i = 0; i < FILE_COUNT; i++) {
+                fileChannels[i].close();
+            }
+        } catch (IOException e) {
+            logger.error("close error");
         }
     }
 
