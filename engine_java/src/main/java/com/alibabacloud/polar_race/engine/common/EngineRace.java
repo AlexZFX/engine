@@ -144,17 +144,15 @@ public class EngineRace extends AbstractEngine {
                             long key;
                             int keyHash;
                             while (start < off) {
-                                try {
-                                    localKey.get().position(0);
-                                    keyFileChannels[finalI].read(localKey.get(), start);
-                                    start += KEY_AND_OFF_LEN;
-                                    localKey.get().position(0);
-                                    key = localKey.get().getLong();
-                                    keyHash = keyFileHash(key);
-                                    keyMap[keyHash].put(key, localKey.get().getInt());
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
+                                //                                    localKey.get().position(0);
+//                                    keyFileChannels[finalI].read(localKey.get(), start);
+//                                    start += KEY_AND_OFF_LEN;
+//                                    localKey.get().position(0);
+//                                    key = localKey.get().getLong();
+                                key = keyByteBuffers[finalI].getLong();
+                                keyHash = keyFileHash(key);
+                                keyMap[keyHash].put(key, keyByteBuffers[finalI].getInt());
+                                start += KEY_AND_OFF_LEN;
                             }
                             countDownLatch.countDown();
                         });
@@ -182,7 +180,7 @@ public class EngineRace extends AbstractEngine {
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" valueFileHash = "+valueFileHash);
         int off = valueOffsets[hash].getAndIncrement();
-        int keyoff = off + valueOffsets[(hash + 64) % 128].get();
+//        int keyoff = off + valueOffsets[(hash + 64) % 128].get();
 //        System.out.println(numkey + " - " + (off + 1));
 //        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
 //        keyMap[keyHash].put(numkey, off);
@@ -192,8 +190,10 @@ public class EngineRace extends AbstractEngine {
 //            localKey.get().position(0);
 //            keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
 //            keyFileChannels[keyHash].write(localKey.get(), valueOffsets[keyHash].get(KEY_AND_OFF_LEN));
-            keyByteBuffers[keyHash].position(keyoff * 12);
-            keyByteBuffers[keyHash].putLong(numkey).putInt(off);
+//            keyByteBuffers[keyHash].position(keyoff * 12);
+            synchronized (keyByteBuffers[keyHash]) {
+                keyByteBuffers[keyHash].putLong(numkey).putInt(off);
+            }
 //            //对应的offset写入文件
 //            localKey.get().putLong(0, off + 1);
 //            localKey.get().position(0);
