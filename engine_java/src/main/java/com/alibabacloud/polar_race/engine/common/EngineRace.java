@@ -12,12 +12,9 @@ import sun.nio.ch.DirectBuffer;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -26,20 +23,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class EngineRace extends AbstractEngine {
 
     private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
-    // key 长度 8B
-    private static final int KEY_LEN = 8;
-    // offset 长度 8B
-    private static final int OFF_LEN = 8;
+    //    // key 长度 8B
+//    private static final int KEY_LEN = 8;
+//    // offset 长度 8B
+//    private static final int OFF_LEN = 8;
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
     private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
-    //    单个线程写入消息 100w
-    private static final int MSG_COUNT = 1000000;
-    //    64个线程写消息 6400w
-    private static final int ALL_MSG_COUNT = 64000000;
+    ////        单个线程写入消息 100w
+//    private static final int MSG_COUNT = 1000000;
+//    //    64个线程写消息 6400w
+//    private static final int ALL_MSG_COUNT = 64000000;
     //每个map存储的key数量
     private static final int PER_MAP_COUNT = 1024000;
 
@@ -47,7 +44,7 @@ public class EngineRace extends AbstractEngine {
 
     //    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
-    private static final int MSG_COUNT_PERFILE = 4000000;
+//    private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
     private static final int FILE_COUNT = 256;
 
@@ -127,8 +124,8 @@ public class EngineRace extends AbstractEngine {
                         final int finalI = i;
                         executor.execute(() -> {
                             int start = 0;
-                            long key;
-                            int keyHash;
+//                            long key;
+//                            int keyHash;
                             try {
                                 MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
                                 while (start < off) {
@@ -136,9 +133,9 @@ public class EngineRace extends AbstractEngine {
 //                                        keyFileChannels[finalI].read(localKey.get(), start);
                                     start += KEY_AND_OFF_LEN;
 //                                        localKey.get().position(0);
-                                    key = mappedByteBuffer.getLong();
-                                    keyHash = keyFileHash(key);
-                                    keyMap[keyHash].put(key, mappedByteBuffer.getInt());
+//                                    key = mappedByteBuffer.getLong();
+//                                    keyHash = keyFileHash(key);
+                                    keyMap[finalI].put(mappedByteBuffer.getLong(), mappedByteBuffer.getInt());
                                 }
                                 unmap(mappedByteBuffer);
                                 countDownLatch.countDown();
@@ -163,7 +160,7 @@ public class EngineRace extends AbstractEngine {
                     fileChannels[i] = channel;
                     // 从 length处直接写入
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                    valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+                    valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, randomAccessFile.length());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -199,7 +196,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), off << SHIFT_NUM);
+            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
