@@ -34,9 +34,9 @@ public class EngineRace extends AbstractEngine {
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
     //    单个线程写入消息 100w
-//    private static final int MSG_COUNT = 1000000;
+    private static final int MSG_COUNT = 1000000;
     //    64个线程写消息 6400w
-//    private static final int ALL_MSG_COUNT = 64000000;
+    private static final int ALL_MSG_COUNT = 64000000;
     //每个map存储的key数量
     private static final int PER_MAP_COUNT = 1024000;
 
@@ -46,9 +46,9 @@ public class EngineRace extends AbstractEngine {
     //    每个文件存放 400w 个数据
     private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
-    private static final int FILE_COUNT = 64;
+    private static final int FILE_COUNT = 256;
 
-    private static final int HASH_VALUE = 0x3F;
+    private static final int HASH_VALUE = 0xFF;
 
     private static final int HASH_KEY = 0x3F;
 
@@ -122,8 +122,8 @@ public class EngineRace extends AbstractEngine {
                         final int finalI = i;
                         executor.execute(() -> {
                             int start = 0;
-//                            long key;
-//                            int keyHash;
+                            long key;
+                            int keyHash;
                             try {
                                 MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
                                 while (start < off) {
@@ -131,9 +131,9 @@ public class EngineRace extends AbstractEngine {
 //                                        keyFileChannels[finalI].read(localKey.get(), start);
                                     start += KEY_AND_OFF_LEN;
 //                                        localKey.get().position(0);
-//                                    key = mappedByteBuffer.getLong();
-//                                    keyHash = keyFileHash(key);
-                                    keyMap[finalI].put(mappedByteBuffer.getLong(), mappedByteBuffer.getInt());
+                                    key = mappedByteBuffer.getLong();
+                                    keyHash = keyFileHash(key);
+                                    keyMap[keyHash].put(key, mappedByteBuffer.getInt());
                                 }
                                 unmap(mappedByteBuffer);
                                 countDownLatch.countDown();
@@ -171,7 +171,7 @@ public class EngineRace extends AbstractEngine {
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
-//        int keyHash = keyFileHash(numkey);
+        int keyHash = keyFileHash(numkey);
 //        logger.warn("key = "+ Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" valueFileHash = "+valueFileHash);
@@ -183,7 +183,7 @@ public class EngineRace extends AbstractEngine {
             //key写入文件
             localKey.get().putLong(0, numkey).putInt(8, off);
             localKey.get().position(0);
-            keyFileChannels[hash].write(localKey.get(), keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+            keyFileChannels[keyHash].write(localKey.get(), keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
 //            //对应的offset写入文件
 //            localKey.get().putLong(0, off + 1);
 //            localKey.get().position(0);
@@ -204,7 +204,7 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
-//        int keyHash = keyFileHash(numkey);
+        int keyHash = keyFileHash(numkey);
 //        logger.warn("key = " + Arrays.toString(key));
 //        logger.warn("numkey = " + numkey);
 //        logger.warn(" valueFileHash = " + valueFileHash);
@@ -213,7 +213,7 @@ public class EngineRace extends AbstractEngine {
 //        System.out.println(valueFileHash);
 
         // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
-        long off = keyMap[hash].getOrDefault(numkey, -1);
+        long off = keyMap[keyHash].getOrDefault(numkey, -1);
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
@@ -236,12 +236,19 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
-        for (int i = 0; i < FILE_COUNT; i++) {
-            try {
-                fileChannels[i].close();
-            } catch (IOException e) {
-                logger.error("close error");
+        try {
+            for (int i = 0; i < THREAD_NUM; i++) {
+                logger.error("key文件 " + i + "大小为 " + keyFileChannels[i].size() / 1024 + "KB");
+                keyFileChannels[i].close();
             }
+            for (int i = 0; i < FILE_COUNT; i++) {
+
+                logger.error("data文件 " + i + "大小为 " + fileChannels[i].size() / 1024 / 1024 + "M");
+                fileChannels[i].close();
+
+            }
+        } catch (IOException e) {
+            logger.error("close error");
         }
     }
 
