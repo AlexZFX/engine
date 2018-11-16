@@ -229,8 +229,10 @@ public class EngineRace extends AbstractEngine {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
         if (USE_MMAP) {
-            valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
-            valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
+            synchronized (valueMappedByteBuffer[hash]) {
+                valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
+                valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
+            }
         } else {
             try {
                 localBufferValue.get().position(0);
