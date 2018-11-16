@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -53,7 +54,7 @@ public class EngineRace extends AbstractEngine {
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.8);
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.95);
         }
     }
 
@@ -121,20 +122,21 @@ public class EngineRace extends AbstractEngine {
                             int start = 0;
                             long key;
                             int keyHash;
-                            while (start < off) {
-                                try {
-                                    localKey.get().position(0);
-                                    keyFileChannels[finalI].read(localKey.get(), start);
+                            try {
+                                MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
+                                while (start < off) {
+                                    //                                        localKey.get().position(0);
+//                                        keyFileChannels[finalI].read(localKey.get(), start);
                                     start += KEY_AND_OFF_LEN;
-                                    localKey.get().position(0);
-                                    key = localKey.get().getLong();
+//                                        localKey.get().position(0);
+                                    key = mappedByteBuffer.getLong();
                                     keyHash = keyFileHash(key);
-                                    keyMap[keyHash].put(key, localKey.get().getInt());
-                                } catch (IOException e) {
-                                    e.printStackTrace();
+                                    keyMap[keyHash].put(key, mappedByteBuffer.getInt());
                                 }
+                                countDownLatch.countDown();
+                            } catch (IOException e) {
+                                e.printStackTrace();
                             }
-                            countDownLatch.countDown();
                         });
                     } else {
                         countDownLatch.countDown();
@@ -188,7 +190,7 @@ public class EngineRace extends AbstractEngine {
             localBufferValue.get().put(value, 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
-            fileChannels[hash].write(localBufferValue.get(), ((long)off) << SHIFT_NUM);
+            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
