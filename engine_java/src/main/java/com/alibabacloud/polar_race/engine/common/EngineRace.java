@@ -127,6 +127,7 @@ public class EngineRace extends AbstractEngine {
 //                            long key;
 //                            int keyHash;
                             try {
+                                logger.error("data 文件 " + finalI + "的大小为" + off);
                                 MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
                                 while (start < off) {
                                     //                                        localKey.get().position(0);
@@ -160,6 +161,7 @@ public class EngineRace extends AbstractEngine {
                     fileChannels[i] = channel;
                     // 从 length处直接写入
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
+                    logger.error("data 文件 " + i + "的大小为" + randomAccessFile.length());
                     valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, randomAccessFile.length());
                 } catch (IOException e) {
                     e.printStackTrace();
