@@ -16,8 +16,6 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class EngineRace extends AbstractEngine {
@@ -44,7 +42,7 @@ public class EngineRace extends AbstractEngine {
 
     //    private static final int ALL_MSG_COUNT = 6400;
     //    每个文件存放 400w 个数据
-    private static final int MSG_COUNT_PERFILE = 4000000;
+//    private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
     private static final int FILE_COUNT = 64;
 
@@ -73,7 +71,7 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocate(KEY_AND_OFF_LEN);
+            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
         }
     };
 
@@ -84,12 +82,12 @@ public class EngineRace extends AbstractEngine {
         }
     };
 
-    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() throws Exception {
-            return new byte[VALUE_LEN];
-        }
-    };
+//    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
+//        @Override
+//        protected byte[] initialValue() throws Exception {
+//            return new byte[VALUE_LEN];
+//        }
+//    };
 
 
     @Override
@@ -114,25 +112,19 @@ public class EngineRace extends AbstractEngine {
                     keyFileChannels[i] = channel;
                     keyOffsets[i] = new AtomicInteger((int) randomAccessFile.length());
                 }
-                ExecutorService executor = Executors.newFixedThreadPool(THREAD_NUM);
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 for (int i = 0; i < THREAD_NUM; i++) {
                     if (!(keyOffsets[i].get() == 0)) {
                         final long off = keyOffsets[i].get();
                         final int finalI = i;
-                        executor.execute(() -> {
-                            int start = 0;
+                        new Thread(() -> {
 //                            long key;
 //                            int keyHash;
                             try {
+                                int start = 0;
                                 MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
                                 while (start < off) {
-                                    //                                        localKey.get().position(0);
-//                                        keyFileChannels[finalI].read(localKey.get(), start);
                                     start += KEY_AND_OFF_LEN;
-//                                        localKey.get().position(0);
-//                                    key = mappedByteBuffer.getLong();
-//                                    keyHash = keyFileHash(key);
                                     keyMap[finalI].put(mappedByteBuffer.getLong(), mappedByteBuffer.getInt());
                                 }
                                 unmap(mappedByteBuffer);
@@ -140,13 +132,13 @@ public class EngineRace extends AbstractEngine {
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
-                        });
+                        }).start();
                     } else {
                         countDownLatch.countDown();
                     }
                 }
                 countDownLatch.await();
-                executor.shutdownNow();
+//                executor.shutdownNow();
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -217,17 +209,16 @@ public class EngineRace extends AbstractEngine {
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
-//        System.out.println(off - 1);
         try {
             localBufferValue.get().position(0);
             fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-        localBufferValue.get().position(0);
-        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+//        localBufferValue.get().position(0);
+//        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
 //        logger.warn("value = " + Arrays.toString(localByteValue.get()));
-        return localByteValue.get();
+        return localBufferValue.get().array();
     }
 
     @Override
