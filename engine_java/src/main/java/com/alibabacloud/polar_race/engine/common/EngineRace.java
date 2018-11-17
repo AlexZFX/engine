@@ -56,7 +56,7 @@ public class EngineRace extends AbstractEngine {
 
     private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
 
-    private final Unsafe unsafe = getUnsafe();
+    private static final Unsafe unsafe = getUnsafe();
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
@@ -240,8 +240,9 @@ public class EngineRace extends AbstractEngine {
             try {
                 localBufferValue.get().position(0);
                 fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
-                localBufferValue.get().position(0);
-                localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+//                localBufferValue.get().position(0);
+//                localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+                unsafe.copyMemory(localBufferValue.get(), 0, localByteValue.get(), 0, VALUE_LEN);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -292,7 +293,8 @@ public class EngineRace extends AbstractEngine {
         } catch (NoSuchFieldException | IllegalAccessException e) {
             e.printStackTrace();
         }
-        return null;
+        // 不会运行到这一步才对，下面的不可用
+        return Unsafe.getUnsafe();
     }
 
 }
