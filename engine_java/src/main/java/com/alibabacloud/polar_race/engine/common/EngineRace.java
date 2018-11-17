@@ -24,9 +24,9 @@ public class EngineRace extends AbstractEngine {
 
     private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
     // key 长度 8B
-    private static final int KEY_LEN = 8;
-    // offset 长度 8B
-    private static final int OFF_LEN = 8;
+//    private static final int KEY_LEN = 8;
+//    // offset 长度 8B
+//    private static final int OFF_LEN = 8;
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
@@ -56,7 +56,7 @@ public class EngineRace extends AbstractEngine {
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.99);
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.98);
         }
     }
 
@@ -73,14 +73,14 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
+            return ByteBuffer.allocate(KEY_AND_OFF_LEN);
         }
     };
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(VALUE_LEN);
+            return ByteBuffer.allocate(VALUE_LEN);
         }
     };
 
@@ -238,6 +238,7 @@ public class EngineRace extends AbstractEngine {
     public void close() {
         for (int i = 0; i < FILE_COUNT; i++) {
             try {
+                keyFileChannels[i].close();
                 fileChannels[i].close();
             } catch (IOException e) {
                 logger.error("close error");
