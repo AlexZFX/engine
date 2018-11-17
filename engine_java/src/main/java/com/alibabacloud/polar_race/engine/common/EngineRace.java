@@ -13,8 +13,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
@@ -73,14 +71,7 @@ public class EngineRace extends AbstractEngine {
     // 一大块共享缓存
     private volatile ByteBuffer sharedBuffer;
 
-    private static volatile ByteBuffer[] caches = new ByteBuffer[2];
-
-    static {
-        caches[0] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
-        caches[1] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
-    }
-
-    private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
+    private static volatile ByteBuffer[] caches;
 
     private boolean isFirst = true;
     //初始设置为 256 对应 符号位 100000000
@@ -219,6 +210,12 @@ public class EngineRace extends AbstractEngine {
                             keys = new long[KEY_NUM];
                             offs = new int[KEY_NUM];
                         }
+                        if (caches == null) {
+                            caches = new ByteBuffer[2];
+                            caches[0] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+                            caches[1] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+
+                        }
                         final long off = keyOffsets[i].get();
 //                        logger.info("第" + i + "个key文件的大小为 ：" + off + "B");
                         // 第i个文件写入 keys 的起始位置
@@ -329,9 +326,6 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
-        synchronized (threadList) {
-            threadList.add(Thread.currentThread());
-        }
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
@@ -351,6 +345,7 @@ public class EngineRace extends AbstractEngine {
                     visitor.visit(keyBytes, valueBytes);
                 }
                 while (lock) {
+                    Thread.sleep(10);
                 }
             }
 

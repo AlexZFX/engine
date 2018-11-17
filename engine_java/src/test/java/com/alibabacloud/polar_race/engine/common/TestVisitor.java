@@ -7,7 +7,7 @@ package com.alibabacloud.polar_race.engine.common;
 public class TestVisitor extends AbstractVisitor {
     @Override
     public void visit(byte[] key, byte[] value) {
-        if (Util.bytes2long(key) != Util.bytes2long(value)) {
+        if (Math.abs(Util.bytes2long(key) - Util.bytes2long(value)) > 1) {
             System.out.println("匹配错误 key = " + Util.bytes2long(key) + "-" + Util.bytes2long(value));
 //            System.out.println(Arrays.toString(value));
         } else {
