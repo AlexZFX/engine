@@ -13,6 +13,7 @@ import sun.nio.ch.DirectBuffer;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -55,7 +56,7 @@ public class EngineRace extends AbstractEngine {
 
     private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
 
-    private final Unsafe unsafe = Unsafe.getUnsafe();
+    private final Unsafe unsafe = getUnsafe();
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
@@ -280,6 +281,18 @@ public class EngineRace extends AbstractEngine {
         if (var1 != null) {
             var1.clean();
         }
+    }
+
+    private static Unsafe getUnsafe() {
+        Field f = null;
+        try {
+            f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            return (Unsafe) f.get(null);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
 }
