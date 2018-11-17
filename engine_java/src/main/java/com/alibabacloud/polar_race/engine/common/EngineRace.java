@@ -129,7 +129,7 @@ public class EngineRace extends AbstractEngine {
 //                            long key;
 //                            int keyHash;
                             try {
-                                logger.error("data 文件 " + finalI + "的大小为" + off);
+//                                logger.error("data 文件 " + finalI + "的大小为" + off);
                                 MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
                                 while (start < off) {
                                     //                                        localKey.get().position(0);
@@ -163,7 +163,7 @@ public class EngineRace extends AbstractEngine {
                     fileChannels[i] = channel;
                     // 从 length处直接写入
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                    logger.error("data 文件 " + i + "的大小为" + randomAccessFile.length());
+//                    logger.error("data 文件 " + i + "的大小为" + randomAccessFile.length());
                     if (randomAccessFile.length() < Integer.MAX_VALUE) {
                         valueMappedByteBuffer[i] = channel.map(FileChannel.MapMode.READ_ONLY, 0, randomAccessFile.length());
                     } else {
@@ -229,10 +229,10 @@ public class EngineRace extends AbstractEngine {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
         if (USE_MMAP) {
-            synchronized (valueMappedByteBuffer[hash]) {
-                valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
-                valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
-            }
+            ByteBuffer buffer = valueMappedByteBuffer[hash].duplicate();
+//            valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
+            buffer.position((int) (off << SHIFT_NUM));
+            buffer.get(localByteValue.get(), 0, VALUE_LEN);
         } else {
             try {
                 localBufferValue.get().position(0);
