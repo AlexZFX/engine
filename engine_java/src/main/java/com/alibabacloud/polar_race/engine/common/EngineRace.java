@@ -13,8 +13,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
@@ -37,10 +35,10 @@ public class EngineRace extends AbstractEngine {
 
     private static final int SHIFT_NUM = 12;
     // 存放 value 的文件数量 128
-    private static final int FILE_COUNT = 512;
+    private static final int FILE_COUNT = 256;
 
     //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 4320m
-    private static final int VALUE_FILE_SIZE = 520 * 1024 * 1024;
+    private static final int VALUE_FILE_SIZE = 1024 * 1024 * 1024;
 
     // 12m * 1024 * 1024 字节
     private static final int KEY_FILE_SIZE = 12582912;
@@ -62,31 +60,29 @@ public class EngineRace extends AbstractEngine {
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
     // 一大块共享缓存
-    private volatile ByteBuffer sharedBuffer = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
-
-
-    private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
+    private volatile ByteBuffer sharedBuffer;
 
     //    private volatile boolean isFirst = true;
     //初始设置为 256 对应 符号位 100000000
-    private volatile int fileReadCount = 255;
+    private volatile int fileReadCount = 127;
 
 //    private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, () -> {
-        if (fileReadCount < 512) {
-            ++fileReadCount;
-            if (fileReadCount == FILE_COUNT) {
-                fileReadCount = 0;
-            }
-            final int tempCount = fileReadCount;
-            try {
-                sharedBuffer.clear();
-                fileChannels[tempCount].read(sharedBuffer, 0);
-                sharedBuffer.flip();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        if (sharedBuffer == null) {
+            sharedBuffer = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+        }
+        ++fileReadCount;
+        if (fileReadCount == FILE_COUNT) {
+            fileReadCount = 0;
+        }
+        final int tempCount = fileReadCount;
+        try {
+            sharedBuffer.clear();
+            fileChannels[tempCount].read(sharedBuffer, 0);
+            sharedBuffer.flip();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     });
 
@@ -144,8 +140,8 @@ public class EngineRace extends AbstractEngine {
                     FileChannel channel = randomAccessFile.getChannel();
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, KEY_FILE_SIZE);
                     keyOffsets[i] = new AtomicInteger(0);
-                    for (int j = 0; j < 8; j++) {
-                        keyOffsets[i].getAndAdd(valueOffsets[(i << 3) + j].get() * KEY_AND_OFF_LEN);
+                    for (int j = 0; j < 4; j++) {
+                        keyOffsets[i].getAndAdd(valueOffsets[(i << 2) + j].get() * KEY_AND_OFF_LEN);
                     }
                 }
 
@@ -190,7 +186,6 @@ public class EngineRace extends AbstractEngine {
                 heapSort(CURRENT_KEY_NUM);
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
-                logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -203,7 +198,7 @@ public class EngineRace extends AbstractEngine {
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
         int fileHash = valueFileHash(numkey);
-        int keyHash = fileHash >>> 3;
+        int keyHash = fileHash >>> 2;
         // value 写入的 offset，每个块内单独计算off
         int off;
         try {
@@ -262,13 +257,9 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
-        synchronized (threadList) {
-            threadList.add(Thread.currentThread());
-        }
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         try {
             // 第一次初始化sharedBuffer
 
@@ -310,7 +301,7 @@ public class EngineRace extends AbstractEngine {
 
     //    取前9位，分为512个文件
     private static int valueFileHash(long key) {
-        return (int) (key >>> 55);
+        return (int) (key >>> 56);
     }
 
     private int getKey(long numkey) {
