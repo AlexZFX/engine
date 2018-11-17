@@ -79,14 +79,21 @@ public class EngineRace extends AbstractEngine {
 
     private volatile int offReadCount = 255;
 
-    private volatile boolean lock = true;
+    private volatile boolean ready = true;
 
     private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
         @Override
         public void run() {
-            lock = true;
+            try {
+                while (!ready) {
+                    Thread.sleep(1);
+                }
+                ready = false;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
             ++fileReadCount;
             if (fileReadCount == FILE_COUNT) {
                 fileReadCount = 0;
@@ -110,7 +117,7 @@ public class EngineRace extends AbstractEngine {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
                         caches[1].flip();
-                        lock = false;
+                        ready = true;
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -122,7 +129,7 @@ public class EngineRace extends AbstractEngine {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
                         caches[0].flip();
-                        lock = false;
+                        ready = true;
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -343,9 +350,6 @@ public class EngineRace extends AbstractEngine {
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
                     visitor.visit(keyBytes, valueBytes);
-                }
-                while (lock) {
-                    Thread.sleep(10);
                 }
             }
 
