@@ -7,6 +7,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.Cleaner;
+import sun.misc.Unsafe;
 import sun.nio.ch.DirectBuffer;
 
 import java.io.File;
@@ -53,6 +54,8 @@ public class EngineRace extends AbstractEngine {
     private static final int HASH_KEY = 0x3F;
 
     private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
+
+    private final Unsafe unsafe = Unsafe.getUnsafe();
 
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
@@ -229,10 +232,9 @@ public class EngineRace extends AbstractEngine {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
         if (USE_MMAP) {
-            ByteBuffer buffer = valueMappedByteBuffer[hash].duplicate();
 //            valueMappedByteBuffer[hash].position((int) (off << SHIFT_NUM));
-            buffer.position((int) (off << SHIFT_NUM));
-            buffer.get(localByteValue.get(), 0, VALUE_LEN);
+//            valueMappedByteBuffer[hash].get(localByteValue.get(), 0, VALUE_LEN);
+            unsafe.copyMemory(valueMappedByteBuffer[hash], (int) (off << SHIFT_NUM), localByteValue.get(), 0, VALUE_LEN);
         } else {
             try {
                 localBufferValue.get().position(0);
