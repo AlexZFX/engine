@@ -78,16 +78,16 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocate(VALUE_LEN);
+            return ByteBuffer.allocateDirect(VALUE_LEN);
         }
     };
 
-//    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
-//        @Override
-//        protected byte[] initialValue() throws Exception {
-//            return new byte[VALUE_LEN];
-//        }
-//    };
+    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() throws Exception {
+            return new byte[VALUE_LEN];
+        }
+    };
 
 
     @Override
@@ -118,8 +118,6 @@ public class EngineRace extends AbstractEngine {
                         final long off = keyOffsets[i].get();
                         final int finalI = i;
                         new Thread(() -> {
-//                            long key;
-//                            int keyHash;
                             try {
                                 int start = 0;
                                 MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
@@ -138,7 +136,6 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 countDownLatch.await();
-//                executor.shutdownNow();
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -163,23 +160,12 @@ public class EngineRace extends AbstractEngine {
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
-//        int keyHash = keyFileHash(numkey);
-//        logger.warn("key = "+ Arrays.toString(key));
-//        logger.warn("numkey = " + numkey);
-//        logger.warn(" valueFileHash = "+valueFileHash);
         int off = valueOffsets[hash].getAndIncrement();
-//        System.out.println(numkey + " - " + (off + 1));
-//        System.out.println(Util.bytes2long(key) + " - " + Util.bytes2long(value));
-//        keyMap[keyHash].put(numkey, off);
         try {
             //key写入文件
             localKey.get().putLong(0, numkey).putInt(8, off);
             localKey.get().position(0);
             keyFileChannels[hash].write(localKey.get(), keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
-//            //对应的offset写入文件
-//            localKey.get().putLong(0, off + 1);
-//            localKey.get().position(0);
-//            keyFileChannel.write(localKey.get(), keyFileOffset.getAndAdd(KEY_LEN));
             //将value写入buffer
             localBufferValue.get().position(0);
             localBufferValue.get().put(value, 0, VALUE_LEN);
@@ -196,15 +182,6 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
-//        int keyHash = keyFileHash(numkey);
-//        logger.warn("key = " + Arrays.toString(key));
-//        logger.warn("numkey = " + numkey);
-//        logger.warn(" valueFileHash = " + valueFileHash);
-
-//        System.out.println(numkey);
-//        System.out.println(valueFileHash);
-
-        // key 不存在会返回0，避免跟位置0混淆，off写加一，读减一
         long off = keyMap[hash].getOrDefault(numkey, -1);
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
@@ -215,10 +192,9 @@ public class EngineRace extends AbstractEngine {
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-//        localBufferValue.get().position(0);
-//        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
-//        logger.warn("value = " + Arrays.toString(localByteValue.get()));
-        return localBufferValue.get().array();
+        localBufferValue.get().position(0);
+        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+        return localByteValue.get();
     }
 
     @Override
