@@ -63,17 +63,19 @@ public class EngineRace extends AbstractEngine {
 
     private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
+    private static MappedByteBuffer[] keyMappedByteBuffers = new MappedByteBuffer[THREAD_NUM];
+
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
 
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
-    private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
-        @Override
-        protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
-        }
-    };
+//    private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
+//        @Override
+//        protected ByteBuffer initialValue() throws Exception {
+//            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
+//        }
+//    };
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -105,31 +107,39 @@ public class EngineRace extends AbstractEngine {
         // file是一个目录时进行接下来的操作
         if (file.isDirectory()) {
             try {
+                //先 创建 FILE_COUNT个FileChannel 供write顺序写入，并由此文件获取value文件的大小
+                for (int i = 0; i < FILE_COUNT; i++) {
+                    try {
+                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+                        FileChannel channel = randomAccessFile.getChannel();
+                        fileChannels[i] = channel;
+                        // 从 length处直接写入
+                        valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
+                        keyOffsets[i] = new AtomicInteger(valueOffsets[i].get() * 12);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
                 //先构建keyFileChannel 和 初始化 map
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
-                    keyOffsets[i] = new AtomicInteger((int) randomAccessFile.length());
+                    keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 12);
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 for (int i = 0; i < THREAD_NUM; i++) {
                     if (!(keyOffsets[i].get() == 0)) {
                         final long off = keyOffsets[i].get();
                         final int finalI = i;
+                        final MappedByteBuffer buffer = keyMappedByteBuffers[i];
                         new Thread(() -> {
-                            try {
-                                int start = 0;
-                                MappedByteBuffer mappedByteBuffer = keyFileChannels[finalI].map(FileChannel.MapMode.READ_ONLY, 0, off);
-                                while (start < off) {
-                                    start += KEY_AND_OFF_LEN;
-                                    keyMap[finalI].put(mappedByteBuffer.getLong(), mappedByteBuffer.getInt());
-                                }
-                                unmap(mappedByteBuffer);
-                                countDownLatch.countDown();
-                            } catch (IOException e) {
-                                e.printStackTrace();
+                            int start = 0;
+                            while (start < off) {
+                                start += KEY_AND_OFF_LEN;
+                                keyMap[finalI].put(buffer.getLong(), buffer.getInt());
                             }
+                            countDownLatch.countDown();
                         }).start();
                     } else {
                         countDownLatch.countDown();
@@ -138,18 +148,6 @@ public class EngineRace extends AbstractEngine {
                 countDownLatch.await();
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
-            }
-            //创建 FILE_COUNT个FileChannel 供write顺序写入
-            for (int i = 0; i < FILE_COUNT; i++) {
-                try {
-                    randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                    FileChannel channel = randomAccessFile.getChannel();
-                    fileChannels[i] = channel;
-                    // 从 length处直接写入
-                    valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
             }
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
@@ -162,10 +160,13 @@ public class EngineRace extends AbstractEngine {
         int hash = valueFileHash(numkey);
         int off = valueOffsets[hash].getAndIncrement();
         try {
-            //key写入文件
-            localKey.get().putLong(0, numkey).putInt(8, off);
-            localKey.get().position(0);
-            keyFileChannels[hash].write(localKey.get(), keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+//            //key写入文件
+//            localKey.get().putLong(0, numkey).putInt(8, off);
+//            localKey.get().position(0);
+//            keyFileChannels[hash].write(localKey.get(), keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+            ByteBuffer buffer = keyMappedByteBuffers[hash].slice();
+            buffer.position(keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+            buffer.putLong(numkey).putInt(off);
             //将value写入buffer
             localBufferValue.get().position(0);
             localBufferValue.get().put(value, 0, VALUE_LEN);
