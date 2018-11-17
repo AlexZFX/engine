@@ -89,7 +89,7 @@ public class EngineRace extends AbstractEngine {
             }
             final int tempCount = fileReadCount;
             try {
-                sharedBuffer = list.take();
+                sharedBuffer = list.poll(20, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -147,6 +147,14 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void open(String path) throws EngineException {
+        new Thread(() -> {
+            try {
+                Thread.sleep(TimeUnit.MINUTES.toMillis(15));
+                System.exit(-1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
         logger.info("--------open--------");
         File file = new File(path);
         // 创建目录
