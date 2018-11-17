@@ -8,14 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class EngineRace extends AbstractEngine {
 
@@ -44,7 +42,6 @@ public class EngineRace extends AbstractEngine {
 
     private static long[] keys;
     // 第i个key的对应value的索引
-//    private static final int[] offs = new int[KEY_NUM];
     private static int[] offs;
 
     private static LongIntHashMap[] map = new LongIntHashMap[THREAD_NUM];
@@ -68,11 +65,9 @@ public class EngineRace extends AbstractEngine {
 
     private boolean isFirst = true;
     //初始设置为 256 对应 符号位 100000000
-    private volatile int fileReadCount = 256;
+    private volatile int fileReadCount = 0;
 
-    private volatile int offReadCount = 255;
-
-    private volatile boolean ready = true;
+    private volatile int offReadCount = -1;
 
     private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
@@ -92,7 +87,6 @@ public class EngineRace extends AbstractEngine {
             final int tempCount = fileReadCount;
             try {
                 sharedBuffer = list.poll(1, TimeUnit.SECONDS);
-                logger.error("poll one buffer, fileReadCount = " + fileReadCount + "  offReadCount=" + offReadCount);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -145,7 +139,9 @@ public class EngineRace extends AbstractEngine {
         }
     };
 
-    private int CURRENT_KEY_NUM;
+    private int CURRENT_KEY_NUM = 0;
+
+    private int MID_KEY_NUM = 0;
 
 
     @Override
@@ -184,34 +180,36 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
 
+                for (int i = 0; i < 32; i++) {
+                    MID_KEY_NUM += keyOffsets[i].get() / 12;
+                }
+
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
-                CURRENT_KEY_NUM = 0;
                 for (int i = 0; i < THREAD_NUM; i++) {
                     // 只要进入判断则说明是在读取过程中，存在相同key
                     if (!(keyOffsets[i].get() == 0)) {
-                        if (keys == null) {
-                            keys = new long[KEY_NUM];
-                            offs = new int[KEY_NUM];
-                        }
                         if (caches == null) {
                             caches = new ByteBuffer[2];
                             caches[0] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
                             caches[1] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
-
                         }
-                        final long off = keyOffsets[i].get();
+                        if (keys == null) {
+                            keys = new long[KEY_NUM];
+                            offs = new int[KEY_NUM];
+                        }
+                        final int off = keyOffsets[i].get();
                         // 第i个文件写入 keys 的起始位置
-                        final int temp = CURRENT_KEY_NUM;
+                        final int start = CURRENT_KEY_NUM;
                         CURRENT_KEY_NUM += off / KEY_AND_OFF_LEN;
+                        final int end = CURRENT_KEY_NUM;
                         final MappedByteBuffer buffer = keyMappedByteBuffers[i];
                         new Thread(() -> {
-                            int start = 0;
-                            int n = temp;
-                            while (start < off) {
-                                start += KEY_AND_OFF_LEN;
+                            int n = start;
+                            while (n < end) {
                                 keys[n] = buffer.getLong();
                                 offs[n++] = buffer.getInt();
                             }
+                            quickSort(start, end - 1);
                             countDownLatch.countDown();
                         }).start();
                     } else {
@@ -229,7 +227,7 @@ public class EngineRace extends AbstractEngine {
                 if (caches != null) {
                     executors.execute(() -> {
                         try {
-                            fileChannels[fileReadCount].read(caches[0], 0);
+                            fileChannels[0].read(caches[0], 0);
                             caches[0].flip();
                             list.put(caches[0]);
                         } catch (Exception e) {
@@ -237,12 +235,6 @@ public class EngineRace extends AbstractEngine {
                         }
                     });
                 }
-
-                //获取完之后对key进行排序
-                long sortStartTime = System.currentTimeMillis();
-                heapSort(CURRENT_KEY_NUM);
-                long sortEndTime = System.currentTimeMillis();
-                logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -313,10 +305,6 @@ public class EngineRace extends AbstractEngine {
         return bytes;
     }
 
-//
-//    private static ReentrantLock lock = new ReentrantLock();
-//    private static boolean isCache = false;
-
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
         int num, count = 0;
@@ -325,9 +313,8 @@ public class EngineRace extends AbstractEngine {
         try {
             // 第一次初始化sharedBuffer
             for (int i = 0; i < FILE_COUNT; i++) {
-                logger.info("range file " + i);
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
-                cyclicBarrier.await(1, TimeUnit.SECONDS);
+                cyclicBarrier.await(10, TimeUnit.SECONDS);
                 num = valueOffsets[offReadCount].get();
                 ByteBuffer buffer = sharedBuffer.slice();
                 for (int j = 0; j < num; ++j) {
@@ -368,7 +355,15 @@ public class EngineRace extends AbstractEngine {
     }
 
     private int getKey(long numkey) {
-        int l = 0, r = CURRENT_KEY_NUM - 1, mid;
+        if (numkey < 0) {
+            return binary_search(numkey, MID_KEY_NUM, CURRENT_KEY_NUM - 1);
+        } else {
+            return binary_search(numkey, 0, MID_KEY_NUM - 1);
+        }
+    }
+
+    private int binary_search(long numkey, int l, int r) {
+        int mid;
         long num;
         while (l <= r) {
             mid = (l + r) >> 1;
@@ -385,41 +380,38 @@ public class EngineRace extends AbstractEngine {
     }
 
     /**
-     * 对 index数组进行堆排
+     * 正序排序
      *
-     * @param startKeyNum 只排序前startKeyNum个数字
+     * @param l
+     * @param r
      */
-    private void heapSort(int startKeyNum) {
-        int end = startKeyNum - 1;
-        for (int i = end >> 1; i >= 0; --i) {
-            shiftDown(end, i);
+    private void quickSort(int l, int r) {
+        if (l >= r) {
+            return;
         }
-        for (int keyNum = end; keyNum > 0; --keyNum) {
-            swap(keyNum, 0);
-            shiftDown(keyNum - 1, 0);
-        }
+        int p = partition(l, r);
+        quickSort(l, p - 1);
+        quickSort(p + 1, r);
     }
 
-    /**
-     * index是从 0 开始的数组，则 k *2 之后要 + 1
-     *
-     * @param end 待排序的数组末尾
-     * @param k   待shiftDown的位置
-     */
-    private void shiftDown(int end, int k) {
-        int j = (k << 1) + 1;
-        while (j <= end) {
-            // 比较的数字是 index对应的key
-            if (j + 1 <= end && (keys[j] < keys[j + 1])) {
-                ++j;
+    private int partition(int l, int r) {
+        int low = l, high = r;
+        while (low < high) {
+            while (low < high && keys[low] < keys[high]) {
+                --high;
             }
-            if (keys[k] >= keys[j]) {
-                break;
+            if (low < high) {
+                swap(low, high);
             }
-            swap(k, j);
-            k = j;
-            j = (k << 1) + 1;
+            while (low < high && keys[high] > keys[low]) {
+                ++low;
+            }
+            if (low < high) {
+                swap(low, high);
+                --high;
+            }
         }
+        return low;
     }
 
     private void swap(int i, int j) {
