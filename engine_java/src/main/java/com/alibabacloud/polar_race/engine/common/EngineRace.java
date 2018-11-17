@@ -48,7 +48,7 @@ public class EngineRace extends AbstractEngine {
 
     private static final int HASH_VALUE = 0x3F;
 
-    private static final int HASH_KEY = 0x3F;
+//    private static final int HASH_KEY = 0x3F;
 
     private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
 
@@ -217,9 +217,9 @@ public class EngineRace extends AbstractEngine {
         return (int) (key & HASH_VALUE);
     }
 
-    private static int keyFileHash(long key) {
-        return (int) (key & HASH_KEY);
-    }
+//    private static int keyFileHash(long key) {
+//        return (int) (key & HASH_KEY);
+//    }
 
     private void unmap(MappedByteBuffer var0) {
         Cleaner var1 = ((DirectBuffer) var0).cleaner();
