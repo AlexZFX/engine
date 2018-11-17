@@ -7,11 +7,13 @@ import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.Cleaner;
+import sun.misc.Unsafe;
 import sun.nio.ch.DirectBuffer;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -31,18 +33,11 @@ public class EngineRace extends AbstractEngine {
     private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
-    //    单个线程写入消息 100w
-//    private static final int MSG_COUNT = 1000000;
-    //    64个线程写消息 6400w
-//    private static final int ALL_MSG_COUNT = 64000000;
+
     //每个map存储的key数量
     private static final int PER_MAP_COUNT = 1024000;
 
     private static final int SHIFT_NUM = 12;
-
-    //    private static final int ALL_MSG_COUNT = 6400;
-    //    每个文件存放 400w 个数据
-//    private static final int MSG_COUNT_PERFILE = 4000000;
     //    存放 value 的文件数量 128
     private static final int FILE_COUNT = 64;
 
@@ -52,9 +47,11 @@ public class EngineRace extends AbstractEngine {
 
     private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
 
+    private static final Unsafe unsafe = getUnsafe();
+
     static {
         for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.98);
+            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.99);
         }
     }
 
@@ -163,12 +160,17 @@ public class EngineRace extends AbstractEngine {
         int off = valueOffsets[hash].getAndIncrement();
         try {
             //key写入文件
-            localKey.get().putLong(0, numkey).putInt(8, off);
-            localKey.get().position(0);
+//            localKey.get().putLong(0, numkey).putInt(8, off);
+//            localKey.get().position(0);
+            unsafe.putLong(localKey.get(), 0, numkey);
+            unsafe.putInt(localKey.get(), 8, off);
             keyFileChannels[hash].write(localKey.get(), keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
             //将value写入buffer
-            localBufferValue.get().position(0);
-            localBufferValue.get().put(value, 0, VALUE_LEN);
+//            localBufferValue.get().position(0);
+//            localBufferValue.get().put(value, 0, VALUE_LEN);
+
+            //srcobj srcoff destobj destoff len
+            unsafe.copyMemory(value, 0, localBufferValue.get(), 0, VALUE_LEN);
             //buffer写入文件
             localBufferValue.get().position(0);
             fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
@@ -192,8 +194,9 @@ public class EngineRace extends AbstractEngine {
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-        localBufferValue.get().position(0);
-        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+//        localBufferValue.get().position(0);
+//        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+        unsafe.copyMemory(localBufferValue.get(), 0, localByteValue.get(), 0, VALUE_LEN);
         return localByteValue.get();
     }
 
@@ -227,5 +230,19 @@ public class EngineRace extends AbstractEngine {
             var1.clean();
         }
     }
+
+    private static Unsafe getUnsafe() {
+        Field f = null;
+        try {
+            f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            return (Unsafe) f.get(null);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        // 不会运行到这一步才对，下面的不可用
+        return Unsafe.getUnsafe();
+    }
+
 
 }
