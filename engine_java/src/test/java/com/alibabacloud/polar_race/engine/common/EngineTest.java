@@ -20,23 +20,11 @@
 //@FixMethodOrder(MethodSorters.JVM)
 //public class EngineTest {
 //
-//    private static final String RACE_PATH = "/Users/zhangfengxiao/race";
-////    private static final String RACE_PATH = "C:\\idea";
+////    private static final String RACE_PATH = "/Users/zhangfengxiao/race";
+//    private static final String RACE_PATH = "C:\\idea";
 //
 //    private static final int WRITE_TIMES = 20000;
 //
-//    //    @Test
-////    public void openTest() throws EngineException {
-////        long start = System.currentTimeMillis();
-////
-////        EngineRace race = new EngineRace();
-////        race.open(RACE_PATH);
-////
-////
-////        race.close();
-////        long end = System.currentTimeMillis();
-////        System.out.println(end - start);
-////    }
 //    private static final long START = -9000000000000000000L;
 //    private static final long END = 9000000000000000000L;
 //    private static final long INTERVAL = END / WRITE_TIMES - START / WRITE_TIMES;

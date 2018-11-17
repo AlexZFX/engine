@@ -8,14 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 
 public class EngineRace extends AbstractEngine {
 
@@ -42,13 +40,6 @@ public class EngineRace extends AbstractEngine {
     // 12m * 1024 * 1024 字节
     private static final int KEY_FILE_SIZE = 12582912;
 
-//    private static final long BLOCK_SIZE = 8847360L;
-    // BLOCK_SIZE / VALUE_LEN
-//    private static final int MAX_NUM_PER_BLOCK = 2160;
-
-    //    private static final int HASH_VALUE = 0x1FF;
-    // 第i个key
-//    private static final long[] keys = new long[KEY_NUM];
     private static long[] keys;
     // 第i个key的对应value的索引
 //    private static final int[] offs = new int[KEY_NUM];
@@ -83,17 +74,11 @@ public class EngineRace extends AbstractEngine {
 
     private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
+    private static LinkedBlockingQueue<ByteBuffer> list = new LinkedBlockingQueue<>(1);
+
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
         @Override
         public void run() {
-            try {
-                while (!ready) {
-                    Thread.sleep(1);
-                }
-                ready = false;
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
             ++fileReadCount;
             if (fileReadCount == FILE_COUNT) {
                 fileReadCount = 0;
@@ -103,22 +88,19 @@ public class EngineRace extends AbstractEngine {
                 offReadCount = 0;
             }
             final int tempCount = fileReadCount;
-//                try {
-//                    caches[0].clear();
-//                    fileChannels[tempCount].read(caches[0], 0);
-//                    caches[0].flip();
-//                } catch (IOException e) {
-//                    e.printStackTrace();
-//                }
+            try {
+                sharedBuffer = list.take();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             if (isFirst) {
-                sharedBuffer = caches[0];
                 executors.execute(() -> {
                     try {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
                         caches[1].flip();
-                        ready = true;
-                    } catch (IOException e) {
+                        list.offer(caches[1], 20, TimeUnit.SECONDS);
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                 });
@@ -129,8 +111,8 @@ public class EngineRace extends AbstractEngine {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
                         caches[0].flip();
-                        ready = true;
-                    } catch (IOException e) {
+                        list.put(caches[0]);
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                 });
@@ -138,14 +120,6 @@ public class EngineRace extends AbstractEngine {
             isFirst = !isFirst;
         }
     });
-
-
-//    private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
-//        @Override
-//        protected ByteBuffer initialValue() throws Exception {
-//            return ByteBuffer.allocate(KEY_AND_OFF_LEN);
-//        }
-//    };
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -193,7 +167,6 @@ public class EngineRace extends AbstractEngine {
                     FileChannel channel = randomAccessFile.getChannel();
                     fileChannels[i] = channel;
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-//                    logger.error("value file " + i + " off  = " + valueOffsets[i].get());
                 }
 
                 // 构建keyFileChannel 和 初始化 mmap
@@ -206,7 +179,6 @@ public class EngineRace extends AbstractEngine {
                     for (int j = 0; j < 8; j++) {
                         keyOffsets[i].getAndAdd(valueOffsets[(i << 3) + j].get() * KEY_AND_OFF_LEN);
                     }
-//                    logger.error("key file " + i + " off  = " + keyOffsets[i].get());
                 }
 
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
@@ -225,7 +197,6 @@ public class EngineRace extends AbstractEngine {
 
                         }
                         final long off = keyOffsets[i].get();
-//                        logger.info("第" + i + "个key文件的大小为 ：" + off + "B");
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
                         CURRENT_KEY_NUM += off / KEY_AND_OFF_LEN;
@@ -255,6 +226,7 @@ public class EngineRace extends AbstractEngine {
                 if (caches != null) {
                     fileChannels[fileReadCount].read(caches[0], 0);
                     caches[0].flip();
+                    list.put(caches[0]);
                 }
 
                 //获取完之后对key进行排序
@@ -338,10 +310,8 @@ public class EngineRace extends AbstractEngine {
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-//        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         try {
             // 第一次初始化sharedBuffer
-            LockSupport.unpark(Thread.currentThread());
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
