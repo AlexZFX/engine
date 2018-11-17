@@ -115,7 +115,7 @@ public class EngineRace extends AbstractEngine {
                         fileChannels[i] = channel;
                         // 从 length处直接写入
                         valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                        keyOffsets[i] = new AtomicInteger(valueOffsets[i].get() * 12);
+                        keyOffsets[i] = new AtomicInteger(valueOffsets[i].get() * KEY_AND_OFF_LEN);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -125,7 +125,7 @@ public class EngineRace extends AbstractEngine {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
-                    keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 12);
+                    keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 20);
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 for (int i = 0; i < THREAD_NUM; i++) {
