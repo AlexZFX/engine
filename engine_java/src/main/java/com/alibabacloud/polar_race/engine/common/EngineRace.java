@@ -90,6 +90,7 @@ public class EngineRace extends AbstractEngine {
             final int tempCount = fileReadCount;
             try {
                 sharedBuffer = list.poll(20, TimeUnit.SECONDS);
+                logger.error("poll one buffer, fileReadCount = " + fileReadCount + "  offReadCount=" + offReadCount);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -149,7 +150,9 @@ public class EngineRace extends AbstractEngine {
     public void open(String path) throws EngineException {
         new Thread(() -> {
             try {
-                Thread.sleep(TimeUnit.MINUTES.toMillis(15));
+                logger.error("self time start");
+                Thread.sleep(TimeUnit.MINUTES.toMillis(25));
+                logger.error("self exit ");
                 System.exit(-1);
             } catch (InterruptedException e) {
                 e.printStackTrace();
