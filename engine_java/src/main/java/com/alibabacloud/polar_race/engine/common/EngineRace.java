@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class EngineRace extends AbstractEngine {
 
-    private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
+//    private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
@@ -68,8 +68,8 @@ public class EngineRace extends AbstractEngine {
         if (!file.exists()) {
             if (!file.mkdir()) {
                 throw new EngineException(RetCodeEnum.IO_ERROR, "创建文件目录失败：" + path);
-            } else {
-                logger.info("创建文件目录成功：" + path);
+//            } else {
+//                logger.info("创建文件目录成功：" + path);
             }
         }
         RandomAccessFile randomAccessFile;
@@ -168,14 +168,14 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
-        for (int i = 0; i < FILE_COUNT; i++) {
-            try {
-                keyFileChannels[i].close();
-                fileChannels[i].close();
-            } catch (IOException e) {
-                logger.error("close error");
-            }
-        }
+//        for (int i = 0; i < FILE_COUNT; i++) {
+//            try {
+//                keyFileChannels[i].close();
+//                fileChannels[i].close();
+//            } catch (IOException e) {
+//                logger.error("close error");
+//            }
+//        }
     }
 
     private static int valueFileHash(long key) {
