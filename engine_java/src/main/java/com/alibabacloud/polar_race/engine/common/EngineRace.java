@@ -14,6 +14,8 @@ import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.alibabacloud.polar_race.engine.common.UnsafeUtil.*;
+
 public class EngineRace extends AbstractEngine {
 
     //    private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
@@ -66,7 +68,12 @@ public class EngineRace extends AbstractEngine {
         }
     };
 
-    private static FastThreadLocal<Long> valueBufferAddress = new FastThreadLocal<>();
+    private static FastThreadLocal<Long> valueBufferAddress = new FastThreadLocal<Long>() {
+        @Override
+        protected Long initialValue() throws Exception {
+            return getAddress(localBufferValue.get());
+        }
+    };
 
     @Override
     public void open(String path) throws EngineException {
@@ -135,9 +142,9 @@ public class EngineRace extends AbstractEngine {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
         int off = valueOffsets[hash].getAndIncrement();
-        if (!valueBufferAddress.isSet()) {
-            valueBufferAddress.set(Util.getAddress(localBufferValue.get()));
-        }
+//        if (!valueBufferAddress.isSet()) {
+//            valueBufferAddress.set(getAddress(localBufferValue.get()));
+//        }
         try {
             ByteBuffer keyBuffer = keyMappedByteBuffers[hash].slice();
             keyBuffer.position(keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
@@ -145,7 +152,7 @@ public class EngineRace extends AbstractEngine {
             long address = valueBufferAddress.get();
             //将value写入buffer
             for (int i = 0; i < value.length; i++) {
-                Util.putByte(address + i, value[i]);
+                putByte(address++, value[i]);
             }
 //        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
 //        System.out.println(Arrays.toString(localByteValue.get()));
@@ -167,6 +174,9 @@ public class EngineRace extends AbstractEngine {
         int hash = valueFileHash(numkey);
         long off = keyMap[hash].getOrDefault(numkey, -1);
         ByteBuffer buffer = localBufferValue.get();
+//        if (!valueBufferAddress.isSet()) {
+//            valueBufferAddress.set(getAddress(localBufferValue.get()));
+//        }
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
@@ -175,10 +185,16 @@ public class EngineRace extends AbstractEngine {
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-        buffer.flip();
-        buffer.get(localByteValue.get(), 0, VALUE_LEN);
+
+//        buffer.flip();
+        byte[] value = localByteValue.get();
+        long address = valueBufferAddress.get();
+//        buffer.get(localByteValue.get(), 0, VALUE_LEN);
+        for (int i = 0; i < VALUE_LEN; i++) {
+            value[i] = getByte(address++);
+        }
         buffer.clear();
-        return localByteValue.get();
+        return value;
     }
 
     @Override
