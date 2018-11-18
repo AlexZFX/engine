@@ -34,8 +34,6 @@ public class EngineRace extends AbstractEngine {
 
     private static final int HASH_VALUE = 0x3F;
 
-//    private static final int HASH_KEY = 0x3F;
-
     private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
 
     static {
@@ -56,27 +54,12 @@ public class EngineRace extends AbstractEngine {
 
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
-//    private static FastThreadLocal<ByteBuffer> localKey = new FastThreadLocal<ByteBuffer>() {
-//        @Override
-//        protected ByteBuffer initialValue() throws Exception {
-//            return ByteBuffer.allocateDirect(KEY_AND_OFF_LEN);
-//        }
-//    };
-
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(VALUE_LEN);
+            return ByteBuffer.allocate(VALUE_LEN);
         }
     };
-
-    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() throws Exception {
-            return new byte[VALUE_LEN];
-        }
-    };
-
 
     @Override
     public void open(String path) throws EngineException {
@@ -146,15 +129,14 @@ public class EngineRace extends AbstractEngine {
         int hash = valueFileHash(numkey);
         int off = valueOffsets[hash].getAndIncrement();
         try {
-            ByteBuffer buffer = keyMappedByteBuffers[hash].slice();
-            buffer.position(keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
-            buffer.putLong(numkey).putInt(off);
+            ByteBuffer keyBuffer = keyMappedByteBuffers[hash].slice();
+            keyBuffer.position(keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+            keyBuffer.putLong(numkey).putInt(off);
             //将value写入buffer
-            localBufferValue.get().clear();
-            localBufferValue.get().put(value, 0, VALUE_LEN);
-            //buffer写入文件
-            localBufferValue.get().flip();
-            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
+            ByteBuffer valueBuffer = localBufferValue.get();
+            valueBuffer.put(value);
+            valueBuffer.flip();
+            fileChannels[hash].write(valueBuffer, ((long) off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -166,18 +148,17 @@ public class EngineRace extends AbstractEngine {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
         long off = keyMap[hash].getOrDefault(numkey, -1);
+        ByteBuffer buffer = localBufferValue.get();
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
         try {
-            localBufferValue.get().clear();
-            fileChannels[hash].read(localBufferValue.get(), off << SHIFT_NUM);
+            buffer.clear();
+            fileChannels[hash].read(buffer, off << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-        localBufferValue.get().flip();
-        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
-        return localByteValue.get();
+        return buffer.array();
     }
 
     @Override
@@ -199,16 +180,5 @@ public class EngineRace extends AbstractEngine {
     private static int valueFileHash(long key) {
         return (int) (key & HASH_VALUE);
     }
-
-//    private static int keyFileHash(long key) {
-//        return (int) (key & HASH_KEY);
-//    }
-
-//    private void unmap(MappedByteBuffer var0) {
-//        Cleaner var1 = ((DirectBuffer) var0).cleaner();
-//        if (var1 != null) {
-//            var1.clean();
-//        }
-//    }
 
 }
