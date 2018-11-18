@@ -4,8 +4,6 @@ import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
 import com.carrotsearch.hppc.LongIntHashMap;
 import io.netty.util.concurrent.FastThreadLocal;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -18,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class EngineRace extends AbstractEngine {
 
-//    private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
+    //    private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
@@ -57,9 +55,18 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocate(VALUE_LEN);
+            return ByteBuffer.allocateDirect(VALUE_LEN);
         }
     };
+
+    private static FastThreadLocal<byte[]> localByteValue = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() throws Exception {
+            return new byte[VALUE_LEN];
+        }
+    };
+
+    private static FastThreadLocal<Long> valueBufferAddress = new FastThreadLocal<>();
 
     @Override
     public void open(String path) throws EngineException {
@@ -128,16 +135,26 @@ public class EngineRace extends AbstractEngine {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
         int off = valueOffsets[hash].getAndIncrement();
+        if (!valueBufferAddress.isSet()) {
+            valueBufferAddress.set(Util.getAddress(localBufferValue.get()));
+        }
         try {
             ByteBuffer keyBuffer = keyMappedByteBuffers[hash].slice();
             keyBuffer.position(keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
             keyBuffer.putLong(numkey).putInt(off);
+            long address = valueBufferAddress.get();
             //将value写入buffer
-            ByteBuffer valueBuffer = localBufferValue.get();
-            valueBuffer.clear();
-            valueBuffer.put(value);
-            valueBuffer.flip();
-            fileChannels[hash].write(valueBuffer, ((long) off) << SHIFT_NUM);
+            for (int i = 0; i < value.length; i++) {
+                Util.putByte(address + i, value[i]);
+            }
+//        localBufferValue.get().get(localByteValue.get(), 0, VALUE_LEN);
+//        System.out.println(Arrays.toString(localByteValue.get()));
+//            ByteBuffer valueBuffer = localBufferValue.get();
+//            valueBuffer.clear();
+//            valueBuffer.put(value);
+//            valueBuffer.flip();
+            fileChannels[hash].write(localBufferValue.get(), ((long) off) << SHIFT_NUM);
+            localBufferValue.get().position(0);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -154,12 +171,14 @@ public class EngineRace extends AbstractEngine {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
         try {
-            buffer.clear();
             fileChannels[hash].read(buffer, off << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
         }
-        return buffer.array();
+        buffer.flip();
+        buffer.get(localByteValue.get(), 0, VALUE_LEN);
+        buffer.clear();
+        return localByteValue.get();
     }
 
     @Override
