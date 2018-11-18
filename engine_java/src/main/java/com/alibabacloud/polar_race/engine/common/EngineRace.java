@@ -134,6 +134,7 @@ public class EngineRace extends AbstractEngine {
             keyBuffer.putLong(numkey).putInt(off);
             //将value写入buffer
             ByteBuffer valueBuffer = localBufferValue.get();
+            valueBuffer.clear();
             valueBuffer.put(value);
             valueBuffer.flip();
             fileChannels[hash].write(valueBuffer, ((long) off) << SHIFT_NUM);
