@@ -2,7 +2,6 @@ package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
-import com.carrotsearch.hppc.LongIntHashMap;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class EngineRace extends AbstractEngine {
 
     private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
+    //总key数量
+    private static final int KEY_NUM = 64000;
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
@@ -33,12 +34,16 @@ public class EngineRace extends AbstractEngine {
     private static final int FILE_COUNT = 64;
 
     private static final int HASH_VALUE = 0x3F;
-
-    private static final LongIntHashMap[] keyMap = new LongIntHashMap[THREAD_NUM];
+    // 第i个key的地址
+    private static final int[] indexs = new int[KEY_NUM];
+    // 第i个key
+    private static final long[] keys = new long[KEY_NUM];
+    // 第i个key的对应value的索引
+    private static final int[] offs = new int[KEY_NUM];
 
     static {
-        for (int i = 0; i < THREAD_NUM; i++) {
-            keyMap[i] = new LongIntHashMap(PER_MAP_COUNT, 0.98);
+        for (int i = 0; i < KEY_NUM; i++) {
+            indexs[i] = i;
         }
     }
 
@@ -51,7 +56,7 @@ public class EngineRace extends AbstractEngine {
 
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
-
+    //每个valueOffsets表示的都是第i个文件中的value数量
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
@@ -97,16 +102,21 @@ public class EngineRace extends AbstractEngine {
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 20);
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
+                int startKeyNum = 0;
                 for (int i = 0; i < THREAD_NUM; i++) {
                     if (!(keyOffsets[i].get() == 0)) {
                         final long off = keyOffsets[i].get();
-                        final int finalI = i;
+                        // 第i个文件写入 keys 的起始位置
+                        final int temp = startKeyNum;
+                        startKeyNum += valueOffsets[i].get();
                         final MappedByteBuffer buffer = keyMappedByteBuffers[i];
                         new Thread(() -> {
                             int start = 0;
+                            int n = temp;
                             while (start < off) {
                                 start += KEY_AND_OFF_LEN;
-                                keyMap[finalI].put(buffer.getLong(), buffer.getInt());
+                                keys[n] = buffer.getLong();
+                                offs[n++] = buffer.getInt();
                             }
                             countDownLatch.countDown();
                         }).start();
@@ -115,6 +125,8 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 countDownLatch.await();
+                //获取完之后对key进行排序
+                heapSort(startKeyNum);
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -148,7 +160,7 @@ public class EngineRace extends AbstractEngine {
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
         int hash = valueFileHash(numkey);
-        long off = keyMap[hash].getOrDefault(numkey, -1);
+        long off = getKey(numkey);
         ByteBuffer buffer = localBufferValue.get();
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
@@ -161,6 +173,7 @@ public class EngineRace extends AbstractEngine {
         }
         return buffer.array();
     }
+
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
@@ -180,6 +193,67 @@ public class EngineRace extends AbstractEngine {
 
     private static int valueFileHash(long key) {
         return (int) (key & HASH_VALUE);
+    }
+
+    private int getKey(long numkey) {
+        int l = 0, r = KEY_NUM, mid;
+        long num;
+        while (l <= r) {
+            mid = (l + r) >> 1;
+            num = keys[indexs[mid]];
+            if (num < numkey) {
+                r = mid - 1;
+            } else if (num > numkey) {
+                l = mid + 1;
+            } else {
+                return offs[indexs[mid]];
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 对 index数组进行堆排
+     *
+     * @param startKeyNum 只排序前startKeyNum个数字
+     */
+    private void heapSort(int startKeyNum) {
+        int end = startKeyNum - 1;
+        for (int i = end >> 1; i >= 0; --i) {
+            shiftDown(end, i);
+        }
+        for (int keyNum = end; keyNum > 0; keyNum--) {
+            swap(keyNum, 0);
+            shiftDown(keyNum - 1, 0);
+        }
+    }
+
+    /**
+     * index是从 0 开始的数组，则 k *2 之后要 + 1
+     *
+     * @param end 待排序的数组末尾
+     * @param k   待shiftDown的位置
+     */
+    private void shiftDown(int end, int k) {
+        int j = k << 1 + 1;
+        while (j < end) {
+            // 比较的数字是 index对应的key
+            if (j + 1 < end && keys[indexs[j]] < keys[indexs[j + 1]]) {
+                ++j;
+            }
+            if (keys[indexs[k]] >= keys[indexs[j]]) {
+                break;
+            }
+            swap(k, j);
+            k = j;
+            j = k << 1 + 1;
+        }
+    }
+
+    private void swap(int i, int j) {
+        int temp = indexs[i];
+        indexs[i] = indexs[j];
+        indexs[j] = temp;
     }
 
 }
