@@ -18,8 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class EngineRace extends AbstractEngine {
 
     private static Logger logger = LoggerFactory.getLogger(EngineRace.class);
+
+    private static final int KEY_LEN = 8;
     //总key数量
-    private static final int KEY_NUM = 64000;
+    private static final int KEY_NUM = 64000000;
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
@@ -65,6 +67,15 @@ public class EngineRace extends AbstractEngine {
             return ByteBuffer.allocate(VALUE_LEN);
         }
     };
+
+    private static FastThreadLocal<byte[]> localKeyBytes = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() throws Exception {
+            return new byte[KEY_LEN];
+        }
+    };
+
+    private int CURRENT_KEY_NUM = 0;
 
     @Override
     public void open(String path) throws EngineException {
@@ -126,6 +137,7 @@ public class EngineRace extends AbstractEngine {
                 }
                 countDownLatch.await();
                 //获取完之后对key进行排序
+                CURRENT_KEY_NUM = startKeyNum - 1;
                 heapSort(startKeyNum);
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
@@ -177,7 +189,35 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
+        long key;
+        int hash, index;
+        ByteBuffer buffer = localBufferValue.get();
+        byte[] bytes = localKeyBytes.get();
+        if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
+            try {
+                for (int i = 0; i < KEY_NUM; i++) {
+                    index = indexs[i];
+                    key = keys[index];
+                    hash = valueFileHash(key);
+                    buffer.clear();
+                    fileChannels[hash].read(buffer, offs[index] << SHIFT_NUM);
+                    long2bytes(bytes, key);
+                    visitor.visit(bytes, buffer.array());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                throw new EngineException(RetCodeEnum.IO_ERROR, "range read io 出错");
+            }
+        }
     }
+
+    private void long2bytes(byte[] bytes, long key) {
+        for (int i = 7; i >= 0; i--) {
+            bytes[i] = (byte) (key & 0xFF);
+            key >>= 8;
+        }
+    }
+
 
     @Override
     public void close() {
@@ -196,15 +236,15 @@ public class EngineRace extends AbstractEngine {
     }
 
     private int getKey(long numkey) {
-        int l = 0, r = KEY_NUM, mid;
+        int l = 0, r = CURRENT_KEY_NUM, mid;
         long num;
         while (l <= r) {
             mid = (l + r) >> 1;
             num = keys[indexs[mid]];
             if (num < numkey) {
-                r = mid - 1;
-            } else if (num > numkey) {
                 l = mid + 1;
+            } else if (num > numkey) {
+                r = mid - 1;
             } else {
                 return offs[indexs[mid]];
             }
@@ -222,7 +262,7 @@ public class EngineRace extends AbstractEngine {
         for (int i = end >> 1; i >= 0; --i) {
             shiftDown(end, i);
         }
-        for (int keyNum = end; keyNum > 0; keyNum--) {
+        for (int keyNum = end; keyNum > 0; --keyNum) {
             swap(keyNum, 0);
             shiftDown(keyNum - 1, 0);
         }
@@ -235,8 +275,8 @@ public class EngineRace extends AbstractEngine {
      * @param k   待shiftDown的位置
      */
     private void shiftDown(int end, int k) {
-        int j = k << 1 + 1;
-        while (j < end) {
+        int j = (k << 1) + 1;
+        while (j <= end) {
             // 比较的数字是 index对应的key
             if (j + 1 < end && keys[indexs[j]] < keys[indexs[j + 1]]) {
                 ++j;
@@ -246,7 +286,7 @@ public class EngineRace extends AbstractEngine {
             }
             swap(k, j);
             k = j;
-            j = k << 1 + 1;
+            j = (k << 1) + 1;
         }
     }
 
