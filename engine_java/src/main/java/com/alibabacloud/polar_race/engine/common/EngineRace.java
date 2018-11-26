@@ -36,18 +36,10 @@ public class EngineRace extends AbstractEngine {
     private static final int FILE_COUNT = 64;
 
     private static final int HASH_VALUE = 0x3F;
-    // 第i个key的地址
-    private static final int[] indexs = new int[KEY_NUM];
     // 第i个key
     private static final long[] keys = new long[KEY_NUM];
     // 第i个key的对应value的索引
     private static final int[] offs = new int[KEY_NUM];
-
-    static {
-        for (int i = 0; i < KEY_NUM; i++) {
-            indexs[i] = i;
-        }
-    }
 
     //key 文件的fileChannel
     private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
@@ -139,11 +131,28 @@ public class EngineRace extends AbstractEngine {
                 //获取完之后对key进行排序
                 CURRENT_KEY_NUM = startKeyNum - 1;
                 heapSort(startKeyNum);
+                handleDuplicate(startKeyNum);
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
         } else {
             throw new EngineException(RetCodeEnum.IO_ERROR, "path不是一个目录");
+        }
+    }
+
+    private void handleDuplicate(int startKeyNum) {
+        int max, start;
+        for (int i = 0; i < startKeyNum; ++i) {
+            start = i;
+            max = offs[i];
+            while (i + 1 < startKeyNum && keys[i] == keys[i + 1]) {
+                max = Math.max(max, offs[i + 1]);
+                ++i;
+            }
+            while (start <= i) {
+                offs[start] = max;
+                ++start;
+            }
         }
     }
 
@@ -190,17 +199,16 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
         long key;
-        int hash, index;
+        int hash;
         ByteBuffer buffer = localBufferValue.get();
         byte[] bytes = localKeyBytes.get();
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
                 for (int i = 0; i < KEY_NUM; i++) {
-                    index = indexs[i];
-                    key = keys[index];
+                    key = keys[i];
                     hash = valueFileHash(key);
                     buffer.clear();
-                    fileChannels[hash].read(buffer, offs[index] << SHIFT_NUM);
+                    fileChannels[hash].read(buffer, offs[i] << SHIFT_NUM);
                     long2bytes(bytes, key);
                     visitor.visit(bytes, buffer.array());
                 }
@@ -240,13 +248,13 @@ public class EngineRace extends AbstractEngine {
         long num;
         while (l <= r) {
             mid = (l + r) >> 1;
-            num = keys[indexs[mid]];
+            num = keys[mid];
             if (num < numkey) {
                 l = mid + 1;
             } else if (num > numkey) {
                 r = mid - 1;
             } else {
-                return offs[indexs[mid]];
+                return offs[mid];
             }
         }
         return -1;
@@ -278,10 +286,10 @@ public class EngineRace extends AbstractEngine {
         int j = (k << 1) + 1;
         while (j <= end) {
             // 比较的数字是 index对应的key
-            if (j + 1 < end && keys[indexs[j]] < keys[indexs[j + 1]]) {
+            if (j + 1 < end && keys[j] < keys[j + 1]) {
                 ++j;
             }
-            if (keys[indexs[k]] >= keys[indexs[j]]) {
+            if (keys[k] >= keys[j]) {
                 break;
             }
             swap(k, j);
@@ -291,9 +299,12 @@ public class EngineRace extends AbstractEngine {
     }
 
     private void swap(int i, int j) {
-        int temp = indexs[i];
-        indexs[i] = indexs[j];
-        indexs[j] = temp;
+        long temp = keys[i];
+        keys[i] = keys[j];
+        keys[j] = temp;
+        temp = offs[i];
+        offs[i] = offs[j];
+        offs[j] = (int) temp;
     }
 
 }

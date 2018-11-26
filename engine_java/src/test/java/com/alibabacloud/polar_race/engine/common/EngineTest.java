@@ -24,7 +24,7 @@
 //    //    private static final String RACE_PATH = "/Users/zhangfengxiao/race";
 //    private static final String RACE_PATH = "C:\\idea";
 //
-//    private static final int WRITE_TIMES = 64000;
+//    private static final int WRITE_TIMES = 20000;
 //
 ////    @Test
 ////    public void openTest() throws EngineException {
