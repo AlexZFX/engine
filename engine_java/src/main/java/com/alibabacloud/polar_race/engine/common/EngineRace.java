@@ -22,6 +22,7 @@ public class EngineRace extends AbstractEngine {
     private static final int KEY_LEN = 8;
     //总key数量
     private static final int KEY_NUM = 64000000;
+    //    private static final int KEY_NUM = 64000;
     // key+offset 长度 16B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
@@ -204,7 +205,10 @@ public class EngineRace extends AbstractEngine {
         byte[] bytes = localKeyBytes.get();
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
-                for (int i = 0; i < KEY_NUM; i++) {
+                for (int i = 0; i < KEY_NUM; ++i) {
+                    while (i + 1 < KEY_NUM && keys[i] == keys[i + 1]) {
+                        ++i;
+                    }
                     key = keys[i];
                     hash = valueFileHash(key);
                     buffer.clear();
@@ -216,6 +220,8 @@ public class EngineRace extends AbstractEngine {
                 e.printStackTrace();
                 throw new EngineException(RetCodeEnum.IO_ERROR, "range read io 出错");
             }
+        } else {
+            throw new EngineException(RetCodeEnum.NOT_SUPPORTED, "range传入的lower，upper 不为空");
         }
     }
 

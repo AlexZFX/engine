@@ -139,4 +139,33 @@
 //        race.close();
 //    }
 //
+//    @Test
+//    public void smallSameWrite() throws EngineException {
+//        EngineRace race = new EngineRace();
+//        race.open(RACE_PATH);
+//
+//        for (int i = 0; i < 1000; i++) {
+//            int finalI = i;
+//            race.write(Util.long2bytes(1), Util.genvalue(finalI));
+//        }
+//        race.close();
+//    }
+//
+//    @Test
+//    public void smallSameReadTest() throws EngineException {
+//        EngineRace race = new EngineRace();
+//
+//        race.open(RACE_PATH);
+//        for (int i = 7; i < 1000; i += 5) {
+//            byte[] bytes = race.read(Util.long2bytes(1));
+//            long key = Util.bytes2long(bytes);
+//            if (999 != key) {
+//                System.out.println(i + " 读取不匹配 " + key);
+//            } else {
+//                System.out.println("读取成功");
+//            }
+//        }
+//        race.close();
+//    }
+//
 //}
