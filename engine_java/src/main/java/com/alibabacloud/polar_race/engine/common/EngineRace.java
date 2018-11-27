@@ -141,12 +141,12 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-    private void handleDuplicate(int startKeyNum) {
+    private void handleDuplicate(int keyNum) {
         int max, start;
-        for (int i = 0; i < startKeyNum; ++i) {
+        for (int i = 0; i < keyNum; ++i) {
             start = i;
             max = offs[i];
-            while (i + 1 < startKeyNum && keys[i] == keys[i + 1]) {
+            while (i + 1 < keyNum && keys[i] == keys[i + 1]) {
                 max = Math.max(max, offs[i + 1]);
                 ++i;
             }
@@ -203,7 +203,8 @@ public class EngineRace extends AbstractEngine {
         int hash;
         ByteBuffer buffer = localBufferValue.get();
         byte[] bytes = localKeyBytes.get();
-        logger.error("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+        logger.info("range from " + lower + " to " + upper);
+        logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
                 for (int i = 0; i < CURRENT_KEY_NUM; ++i) {
@@ -215,6 +216,7 @@ public class EngineRace extends AbstractEngine {
                     buffer.clear();
                     fileChannels[hash].read(buffer, offs[i] << SHIFT_NUM);
                     long2bytes(bytes, key);
+                    logger.info(i + ":" + bytes + "-" + key);
                     visitor.visit(bytes, buffer.array());
                 }
             } catch (IOException e) {
