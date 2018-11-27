@@ -214,9 +214,9 @@ public class EngineRace extends AbstractEngine {
                     key = keys[i];
                     hash = valueFileHash(key);
                     buffer.clear();
-                    fileChannels[hash].read(buffer, offs[i] << SHIFT_NUM);
+                    fileChannels[hash].read(buffer, ((long) offs[i]) << SHIFT_NUM);
                     long2bytes(bytes, key);
-                    logger.info(i + ":" + Arrays.toString(bytes) + "-" + key);
+//                    logger.info(i + ":" + Arrays.toString(bytes) + "-" + key);
                     visitor.visit(bytes, buffer.array());
                 }
             } catch (Exception e) {
