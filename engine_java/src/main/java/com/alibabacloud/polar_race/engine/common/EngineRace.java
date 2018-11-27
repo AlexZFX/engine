@@ -12,6 +12,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -203,7 +204,6 @@ public class EngineRace extends AbstractEngine {
         int hash;
         ByteBuffer buffer = localBufferValue.get();
         byte[] bytes = localKeyBytes.get();
-        logger.info("range from " + lower + " to " + upper);
         logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
@@ -216,10 +216,10 @@ public class EngineRace extends AbstractEngine {
                     buffer.clear();
                     fileChannels[hash].read(buffer, offs[i] << SHIFT_NUM);
                     long2bytes(bytes, key);
-                    logger.info(i + ":" + bytes + "-" + key);
+                    logger.info(i + ":" + Arrays.toString(bytes) + "-" + key);
                     visitor.visit(bytes, buffer.array());
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
                 throw new EngineException(RetCodeEnum.IO_ERROR, "range read io 出错");
             }
