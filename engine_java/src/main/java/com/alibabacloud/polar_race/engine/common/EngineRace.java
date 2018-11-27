@@ -251,7 +251,7 @@ public class EngineRace extends AbstractEngine {
     }
 
     private int getKey(long numkey) {
-        int l = 0, r = CURRENT_KEY_NUM, mid;
+        int l = 0, r = CURRENT_KEY_NUM - 1, mid;
         long num;
         while (l <= r) {
             mid = (l + r) >> 1;
@@ -296,7 +296,7 @@ public class EngineRace extends AbstractEngine {
         int j = (k << 1) + 1;
         while (j <= end) {
             // 比较的数字是 index对应的key
-            if (j + 1 < end && keys[j] < keys[j + 1]) {
+            if (j + 1 <= end && keys[j] < keys[j + 1]) {
                 ++j;
             }
             if (keys[k] >= keys[j]) {
