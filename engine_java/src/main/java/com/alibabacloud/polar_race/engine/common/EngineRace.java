@@ -68,7 +68,7 @@ public class EngineRace extends AbstractEngine {
         }
     };
 
-    private int CURRENT_KEY_NUM = 0;
+    private int CURRENT_KEY_NUM;
 
     @Override
     public void open(String path) throws EngineException {
@@ -106,13 +106,13 @@ public class EngineRace extends AbstractEngine {
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 20);
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
-                int startKeyNum = 0;
+                CURRENT_KEY_NUM = 0;
                 for (int i = 0; i < THREAD_NUM; i++) {
                     if (!(keyOffsets[i].get() == 0)) {
                         final long off = keyOffsets[i].get();
                         // 第i个文件写入 keys 的起始位置
-                        final int temp = startKeyNum;
-                        startKeyNum += valueOffsets[i].get();
+                        final int temp = CURRENT_KEY_NUM;
+                        CURRENT_KEY_NUM += valueOffsets[i].get();
                         final MappedByteBuffer buffer = keyMappedByteBuffers[i];
                         new Thread(() -> {
                             int start = 0;
@@ -130,9 +130,9 @@ public class EngineRace extends AbstractEngine {
                 }
                 countDownLatch.await();
                 //获取完之后对key进行排序
-                CURRENT_KEY_NUM = startKeyNum - 1;
-                heapSort(startKeyNum);
-                handleDuplicate(startKeyNum);
+                heapSort(CURRENT_KEY_NUM);
+                handleDuplicate(CURRENT_KEY_NUM);
+                logger.error("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -203,10 +203,11 @@ public class EngineRace extends AbstractEngine {
         int hash;
         ByteBuffer buffer = localBufferValue.get();
         byte[] bytes = localKeyBytes.get();
+        logger.error("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
-                for (int i = 0; i < KEY_NUM; ++i) {
-                    while (i + 1 < KEY_NUM && keys[i] == keys[i + 1]) {
+                for (int i = 0; i < CURRENT_KEY_NUM; ++i) {
+                    while (i + 1 < CURRENT_KEY_NUM && keys[i] == keys[i + 1]) {
                         ++i;
                     }
                     key = keys[i];
@@ -279,6 +280,9 @@ public class EngineRace extends AbstractEngine {
         for (int keyNum = end; keyNum > 0; --keyNum) {
             swap(keyNum, 0);
             shiftDown(keyNum - 1, 0);
+        }
+        for (int i = 0; i < 500; i++) {
+            logger.error("heapSort 结果 ，第i位数字为 " + keys[i]);
         }
     }
 
