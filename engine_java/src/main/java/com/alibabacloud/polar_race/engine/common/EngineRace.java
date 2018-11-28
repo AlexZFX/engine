@@ -73,6 +73,7 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void open(String path) throws EngineException {
+        logger.info("--------close--------");
         File file = new File(path);
         // 创建目录
         if (!file.exists()) {
@@ -132,8 +133,9 @@ public class EngineRace extends AbstractEngine {
                 countDownLatch.await();
                 //获取完之后对key进行排序
                 heapSort(CURRENT_KEY_NUM);
-                handleDuplicate(CURRENT_KEY_NUM);
-                logger.error("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+                logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+                CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
+                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + "after handle duplicate");
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -142,20 +144,16 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-    private void handleDuplicate(int keyNum) {
-        int max, start;
-        for (int i = 0; i < keyNum; ++i) {
-            start = i;
-            max = offs[i];
-            while (i + 1 < keyNum && keys[i] == keys[i + 1]) {
-                max = Math.max(max, offs[i + 1]);
-                ++i;
-            }
-            while (start <= i) {
-                offs[start] = max;
-                ++start;
+    private int handleDuplicate(int keyNum) {
+        int maxnum = 1;
+        for (int i = 1; i < keyNum; ++i) {
+            if (keys[i] != keys[i - 1]) {
+                keys[maxnum] = keys[i];
+                offs[maxnum] = offs[i];
+                maxnum++;
             }
         }
+        return maxnum;
     }
 
     @Override
@@ -238,8 +236,10 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
+        logger.info("--------close--------");
         for (int i = 0; i < FILE_COUNT; i++) {
             try {
+                logger.info("file" + i + " size is " + valueOffsets[i].get());
                 keyFileChannels[i].close();
                 fileChannels[i].close();
             } catch (IOException e) {
@@ -298,10 +298,10 @@ public class EngineRace extends AbstractEngine {
         int j = (k << 1) + 1;
         while (j <= end) {
             // 比较的数字是 index对应的key
-            if (j + 1 <= end && keys[j] < keys[j + 1]) {
+            if (j + 1 <= end && (keys[j] < keys[j + 1] || (keys[j] == keys[j + 1] && offs[j] > offs[j + 1]))) {
                 ++j;
             }
-            if (keys[k] >= keys[j]) {
+            if (keys[k] > keys[j] || (keys[k] == keys[j] && offs[k] < offs[j])) {
                 break;
             }
             swap(k, j);
