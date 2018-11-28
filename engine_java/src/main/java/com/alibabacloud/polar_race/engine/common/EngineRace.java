@@ -30,18 +30,20 @@ public class EngineRace extends AbstractEngine {
     private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
-    //每个map存储的key数量
+    // 每个map存储的key数量
     private static final int PER_MAP_COUNT = 1024000;
 
     private static final int SHIFT_NUM = 12;
-    //    存放 value 的文件数量 128
+    // 存放 value 的文件数量 128
     private static final int FILE_COUNT = 64;
+    private static final int key = 64;
 
     private static final int HASH_VALUE = 0x3F;
     // 第i个key
     private static final long[] keys = new long[KEY_NUM];
     // 第i个key的对应value的索引
     private static final int[] offs = new int[KEY_NUM];
+
 
     //key 文件的fileChannel
     private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
@@ -73,7 +75,7 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void open(String path) throws EngineException {
-        logger.info("--------close--------");
+        logger.info("--------open--------");
         File file = new File(path);
         // 创建目录
         if (!file.exists()) {
@@ -135,7 +137,7 @@ public class EngineRace extends AbstractEngine {
                 heapSort(CURRENT_KEY_NUM);
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
                 CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
-                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + "after handle duplicate");
+                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -206,9 +208,9 @@ public class EngineRace extends AbstractEngine {
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
                 for (int i = 0; i < CURRENT_KEY_NUM; ++i) {
-                    while (i + 1 < CURRENT_KEY_NUM && keys[i] == keys[i + 1]) {
-                        ++i;
-                    }
+//                    while (i + 1 < CURRENT_KEY_NUM && keys[i] == keys[i + 1]) {
+//                        ++i;
+//                    }
                     key = keys[i];
                     hash = valueFileHash(key);
                     buffer.clear();
@@ -249,7 +251,8 @@ public class EngineRace extends AbstractEngine {
     }
 
     private static int valueFileHash(long key) {
-        return (int) (key & HASH_VALUE);
+        return (int)(key >> 58);
+//        return (int) (key & HASH_VALUE);
     }
 
     private int getKey(long numkey) {
