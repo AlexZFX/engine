@@ -12,7 +12,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -134,9 +133,13 @@ public class EngineRace extends AbstractEngine {
                 }
                 countDownLatch.await();
                 //获取完之后对key进行排序
+                long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
+                long sortEndTime = System.currentTimeMillis();
+                logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
                 CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
+                logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
                 logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
@@ -200,6 +203,19 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
+        if (CURRENT_KEY_NUM == KEY_NUM) {
+            for (int i = 0; i < fileChannels.length; i++) {
+                logger.info("ranging-----file" + i + " size is " + valueOffsets[i].get());
+            }
+            int[] temp = new int[256];
+            for (int i = 0; i < keys.length; i++) {
+                temp[fileSplitHash(keys[i])]++;
+            }
+            for (int i = 0; i < temp.length; i++) {
+                logger.info("第50-58位中的" + i + "出现次数为 " + temp[i]);
+            }
+            throw new EngineException(RetCodeEnum.INCOMPLETE, "进入range，输出文件大小后退出");
+        }
         long key;
         int hash;
         ByteBuffer buffer = localBufferValue.get();
@@ -251,7 +267,12 @@ public class EngineRace extends AbstractEngine {
     }
 
     private static int valueFileHash(long key) {
-        return (int)(key >> 58);
+        return (int) (key >>> 58);
+//        return (int) (key & HASH_VALUE);
+    }
+
+    private static int fileSplitHash(long key) {
+        return (int) ((key >>> 50) & 0xFF);
 //        return (int) (key & HASH_VALUE);
     }
 
@@ -285,9 +306,6 @@ public class EngineRace extends AbstractEngine {
         for (int keyNum = end; keyNum > 0; --keyNum) {
             swap(keyNum, 0);
             shiftDown(keyNum - 1, 0);
-        }
-        for (int i = 0; i < 500; i++) {
-            logger.error("heapSort 结果 ，第i位数字为 " + keys[i]);
         }
     }
 
