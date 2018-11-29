@@ -304,7 +304,7 @@ public class EngineRace extends AbstractEngine {
 
     // 分128个block
     private static int valueBlockHash(long key) {
-        return (int) ((key >>> 49) & 0x3F);
+        return (int) ((key >>> 49) & 0x7F);
 //        return (int) (key & HASH_VALUE);
     }
 
