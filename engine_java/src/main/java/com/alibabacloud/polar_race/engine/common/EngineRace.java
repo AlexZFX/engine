@@ -29,13 +29,19 @@ public class EngineRace extends AbstractEngine {
     private static final int THREAD_NUM = 64;
     // value 长度 4K
     private static final int VALUE_LEN = 4096;
-    // 每个map存储的key数量
-    private static final int PER_MAP_COUNT = 1024000;
 
     private static final int SHIFT_NUM = 12;
     // 存放 value 的文件数量 128
-    private static final int FILE_COUNT = 64;
-    private static final int key = 64;
+    private static final int FILE_COUNT = 256;
+
+    //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 1080m
+    private static final int FILE_SIZE = 1132462080;
+
+    private static final int BLOCK_NUM = 128;
+
+    private static final int BLOCK_SIZE = 8847360;
+    // BLOCK_SIZE / VALUE_LEN
+    private static final int MAX_NUM_PER_BLOCK = 2160;
 
     private static final int HASH_VALUE = 0x3F;
     // 第i个key
@@ -49,12 +55,21 @@ public class EngineRace extends AbstractEngine {
 
     private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
-    private static MappedByteBuffer[] keyMappedByteBuffers = new MappedByteBuffer[THREAD_NUM];
+//    private static MappedByteBuffer[] keyMappedByteBuffers = new MappedByteBuffer[THREAD_NUM];
+
+    private static MappedByteBuffer[] valueMappedByteBuffers = new MappedByteBuffer[FILE_COUNT];
 
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
     //每个valueOffsets表示的都是第i个文件中的value数量
-    private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
+    private static AtomicInteger[][] valueOffsets = new AtomicInteger[FILE_COUNT][BLOCK_NUM];
+
+    private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
+        @Override
+        protected ByteBuffer initialValue() throws Exception {
+            return ByteBuffer.allocate(KEY_AND_OFF_LEN);
+        }
+    };
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -67,6 +82,20 @@ public class EngineRace extends AbstractEngine {
         @Override
         protected byte[] initialValue() throws Exception {
             return new byte[KEY_LEN];
+        }
+    };
+
+    private static FastThreadLocal<byte[]> localValueBytes = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() throws Exception {
+            return new byte[VALUE_LEN];
+        }
+    };
+
+    private static FastThreadLocal<ByteBuffer> localBlockBuffer = new FastThreadLocal<ByteBuffer>() {
+        @Override
+        protected ByteBuffer initialValue() throws Exception {
+            return ByteBuffer.allocate(BLOCK_SIZE);
         }
     };
 
@@ -88,25 +117,12 @@ public class EngineRace extends AbstractEngine {
         // file是一个目录时进行接下来的操作
         if (file.isDirectory()) {
             try {
-                //先 创建 FILE_COUNT个FileChannel 供write顺序写入，并由此文件获取value文件的大小
-                for (int i = 0; i < FILE_COUNT; i++) {
-                    try {
-                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                        FileChannel channel = randomAccessFile.getChannel();
-                        fileChannels[i] = channel;
-                        // 从 length处直接写入
-                        valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                        keyOffsets[i] = new AtomicInteger(valueOffsets[i].get() * KEY_AND_OFF_LEN);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
                 //先构建keyFileChannel 和 初始化 map
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
-                    keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, PER_MAP_COUNT * 20);
+                    keyOffsets[i] = new AtomicInteger((int) channel.size());
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 CURRENT_KEY_NUM = 0;
@@ -115,8 +131,8 @@ public class EngineRace extends AbstractEngine {
                         final long off = keyOffsets[i].get();
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
-                        CURRENT_KEY_NUM += valueOffsets[i].get();
-                        final MappedByteBuffer buffer = keyMappedByteBuffers[i];
+                        CURRENT_KEY_NUM += off / 12;
+                        final MappedByteBuffer buffer = keyFileChannels[i].map(FileChannel.MapMode.READ_ONLY, 0, keyOffsets[i].get());
                         new Thread(() -> {
                             int start = 0;
                             int n = temp;
@@ -141,6 +157,23 @@ public class EngineRace extends AbstractEngine {
                 CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
                 logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
                 logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
+                //创建 FILE_COUNT个FileChannel 分块写入
+                for (int i = 0; i < FILE_COUNT; i++) {
+                    try {
+                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+                        FileChannel channel = randomAccessFile.getChannel();
+                        fileChannels[i] = channel;
+                        // 从 length处直接写入
+                        valueMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, FILE_SIZE);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+                for (int i = 0; i < FILE_COUNT; i++) {
+                    for (int j = 0; j < BLOCK_NUM; j++) {
+                        valueOffsets[i][j] = new AtomicInteger(0);
+                    }
+                }
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -164,18 +197,21 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
-        int hash = valueFileHash(numkey);
-        int off = valueOffsets[hash].getAndIncrement();
+        int keyHash = keyFileHash(numkey);
+        int blockHash = valueBlockHash(numkey);
+        int fileHash = valueFileHash(numkey);
+        // value 写入的 offset，每个块内单独计算off
+        int off = valueOffsets[fileHash][blockHash].getAndIncrement();
         try {
-            ByteBuffer keyBuffer = keyMappedByteBuffers[hash].slice();
-            keyBuffer.position(keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+            ByteBuffer keyBuffer = localBufferKey.get();
             keyBuffer.putLong(numkey).putInt(off);
+            keyBuffer.flip();
+            keyFileChannels[keyHash].write(keyBuffer, keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
+            keyBuffer.clear();
             //将value写入buffer
-            ByteBuffer valueBuffer = localBufferValue.get();
-            valueBuffer.clear();
+            ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
+            valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
             valueBuffer.put(value);
-            valueBuffer.flip();
-            fileChannels[hash].write(valueBuffer, ((long) off) << SHIFT_NUM);
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -185,42 +221,26 @@ public class EngineRace extends AbstractEngine {
     @Override
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
-        int hash = valueFileHash(numkey);
-        long off = getKey(numkey);
-        ByteBuffer buffer = localBufferValue.get();
+        int fileHash = valueFileHash(numkey), blockHash = valueBlockHash(numkey);
+        int off = getKey(numkey);
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
-        try {
-            buffer.clear();
-            fileChannels[hash].read(buffer, off << SHIFT_NUM);
-        } catch (IOException e) {
-            throw new EngineException(RetCodeEnum.IO_ERROR, "读取数据出错");
-        }
-        return buffer.array();
+        ByteBuffer buffer = valueMappedByteBuffers[fileHash].slice();
+        buffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
+        buffer.get(localValueBytes.get(), 0, VALUE_LEN);
+        return localValueBytes.get();
     }
 
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
-        if (CURRENT_KEY_NUM == KEY_NUM) {
-            for (int i = 0; i < fileChannels.length; i++) {
-                logger.info("ranging-----file" + i + " size is " + valueOffsets[i].get());
-            }
-            int[] temp = new int[256];
-            for (int i = 0; i < keys.length; i++) {
-                temp[fileSplitHash(keys[i])]++;
-            }
-            for (int i = 0; i < temp.length; i++) {
-                logger.info("第50-58位中的" + i + "出现次数为 " + temp[i]);
-            }
-            throw new EngineException(RetCodeEnum.INCOMPLETE, "进入range，输出文件大小后退出");
-        }
         long key;
-        int hash;
-        ByteBuffer buffer = localBufferValue.get();
-        byte[] bytes = localKeyBytes.get();
+        int hash, blockHash;
+        byte[] keyBytes = localKeyBytes.get();
+        byte[] valueBytes = localValueBytes.get();
         logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+        ByteBuffer blockBuffer = localBlockBuffer.get();
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
                 for (int i = 0; i < CURRENT_KEY_NUM; ++i) {
@@ -228,12 +248,16 @@ public class EngineRace extends AbstractEngine {
 //                        ++i;
 //                    }
                     key = keys[i];
+                    blockHash = valueBlockHash(key);
                     hash = valueFileHash(key);
-                    buffer.clear();
-                    fileChannels[hash].read(buffer, ((long) offs[i]) << SHIFT_NUM);
-                    long2bytes(bytes, key);
-//                    logger.info(i + ":" + Arrays.toString(bytes) + "-" + key);
-                    visitor.visit(bytes, buffer.array());
+                    blockBuffer.clear();
+                    fileChannels[hash].read(blockBuffer, fileChannels[hash].read(blockBuffer, blockHash * BLOCK_SIZE));
+                    while (i < CURRENT_KEY_NUM && valueFileHash(keys[i]) == hash && valueBlockHash(keys[i]) == blockHash) {
+                        blockBuffer.get(valueBytes, offs[i] << SHIFT_NUM, VALUE_LEN);
+                        long2bytes(keyBytes, key);
+                        visitor.visit(keyBytes, valueBytes);
+                        ++i;
+                    }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -257,7 +281,7 @@ public class EngineRace extends AbstractEngine {
         logger.info("--------close--------");
         for (int i = 0; i < FILE_COUNT; i++) {
             try {
-                logger.info("file" + i + " size is " + valueOffsets[i].get());
+//                logger.info("file" + i + " size is " + valueOffsets[i].get());
                 keyFileChannels[i].close();
                 fileChannels[i].close();
             } catch (IOException e) {
@@ -266,13 +290,21 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-    private static int valueFileHash(long key) {
+    private static int keyFileHash(long key) {
+        //取前8位，分为256个文件
         return (int) (key >>> 58);
 //        return (int) (key & HASH_VALUE);
     }
 
-    private static int fileSplitHash(long key) {
-        return (int) ((key >>> 50) & 0xFF);
+    private static int valueFileHash(long key) {
+        //取前8位，分为256个文件
+        return (int) (key >>> 56);
+//        return (int) (key & HASH_VALUE);
+    }
+
+    // 分128个block
+    private static int valueBlockHash(long key) {
+        return (int) ((key >>> 49) & 0x3F);
 //        return (int) (key & HASH_VALUE);
     }
 
