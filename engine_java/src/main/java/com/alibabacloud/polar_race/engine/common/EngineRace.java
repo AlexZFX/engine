@@ -8,7 +8,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -179,7 +178,7 @@ public class EngineRace extends AbstractEngine {
                         fileChannels[i] = channel;
                         // 从 length处直接写入
                         valueMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, FILE_SIZE);
-                    } catch (IOException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }
@@ -188,7 +187,7 @@ public class EngineRace extends AbstractEngine {
                         valueOffsets[i][j] = new AtomicInteger(0);
                     }
                 }
-            } catch (IOException | InterruptedException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         } else {
@@ -238,7 +237,8 @@ public class EngineRace extends AbstractEngine {
                 valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
                 valueBuffer.put(value);
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
+            e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
     }
@@ -309,7 +309,8 @@ public class EngineRace extends AbstractEngine {
 //                logger.info("file" + i + " size is " + valueOffsets[i].get());
                 keyFileChannels[i].close();
                 fileChannels[i].close();
-            } catch (IOException e) {
+            } catch (Exception e) {
+                e.printStackTrace();
                 logger.error("close error");
             }
         }
