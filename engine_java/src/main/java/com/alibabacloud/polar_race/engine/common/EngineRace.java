@@ -202,9 +202,9 @@ public class EngineRace extends AbstractEngine {
         int fileHash = valueFileHash(numkey);
         // value 写入的 offset，每个块内单独计算off
         int off = valueOffsets[fileHash][blockHash].getAndIncrement();
-        if (off >= MAX_NUM_PER_BLOCK) {
-            logger.info("块内数量已经超出单块限制");
-        }
+//        if (off >= MAX_NUM_PER_BLOCK) {
+//            logger.info("块内数量已经超出单块限制");
+//        }
         try {
             ByteBuffer keyBuffer = localBufferKey.get();
             keyBuffer.putLong(numkey).putInt(off);
