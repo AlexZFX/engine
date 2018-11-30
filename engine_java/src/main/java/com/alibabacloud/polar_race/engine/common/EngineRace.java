@@ -159,6 +159,8 @@ public class EngineRace extends AbstractEngine {
                     for (int i = 0; i < THREAD_NUM; i++) {
                         map[i] = new LongIntHashMap(1024000, 0.99);
                     }
+                } else {
+                    logger.info("第一个key为 " + keys[0] + " ，最后一个个key为" + keys[CURRENT_KEY_NUM - 1]);
                 }
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
@@ -169,7 +171,6 @@ public class EngineRace extends AbstractEngine {
                 CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
                 logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
                 logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
-                logger.info("第一个key为 " + keys[0] + " ，最后一个个key为" + keys[CURRENT_KEY_NUM - 1]);
                 //创建 FILE_COUNT个FileChannel 分块写入
                 for (int i = 0; i < FILE_COUNT; i++) {
                     try {
@@ -211,8 +212,8 @@ public class EngineRace extends AbstractEngine {
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
         int keyHash = keyFileHash(numkey);
-        int blockHash = valueBlockHash(numkey);
         int fileHash = valueFileHash(numkey);
+        int blockHash = valueBlockHash(numkey);
         // value 写入的 offset，每个块内单独计算off
         int off;
         try {
@@ -316,19 +317,19 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
+    //取前6位，分为64个文件
     private static int keyFileHash(long key) {
-        //取前8位，分为256个文件
         return (int) (key >>> 58);
 //        return (int) (key & HASH_VALUE);
     }
 
+    //取前8位，分为256个文件
     private static int valueFileHash(long key) {
-        //取前8位，分为256个文件
         return (int) (key >>> 56);
 //        return (int) (key & HASH_VALUE);
     }
 
-    // 分128个block
+    // value文件分128个block
     private static int valueBlockHash(long key) {
         return (int) ((key >>> 49) & 0x7F);
 //        return (int) (key & HASH_VALUE);
