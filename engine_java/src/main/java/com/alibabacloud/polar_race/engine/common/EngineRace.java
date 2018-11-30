@@ -2,6 +2,7 @@ package com.alibabacloud.polar_race.engine.common;
 
 import com.alibabacloud.polar_race.engine.common.exceptions.EngineException;
 import com.alibabacloud.polar_race.engine.common.exceptions.RetCodeEnum;
+import com.carrotsearch.hppc.LongIntHashMap;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,10 +46,13 @@ public class EngineRace extends AbstractEngine {
 
     private static final int HASH_VALUE = 0x3F;
     // 第i个key
-    private static final long[] keys = new long[KEY_NUM];
+//    private static final long[] keys = new long[KEY_NUM];
+    private static long[] keys;
     // 第i个key的对应value的索引
-    private static final int[] offs = new int[KEY_NUM];
+//    private static final int[] offs = new int[KEY_NUM];
+    private static int[] offs;
 
+    private static LongIntHashMap[] map = new LongIntHashMap[THREAD_NUM];
 
     //key 文件的fileChannel
     private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
@@ -128,6 +132,10 @@ public class EngineRace extends AbstractEngine {
                 CURRENT_KEY_NUM = 0;
                 for (int i = 0; i < THREAD_NUM; i++) {
                     if (!(keyOffsets[i].get() == 0)) {
+                        if (keys == null) {
+                            keys = new long[KEY_NUM];
+                            offs = new int[KEY_NUM];
+                        }
                         final long off = keyOffsets[i].get();
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
@@ -148,6 +156,11 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 countDownLatch.await();
+                if (keys == null) {
+                    for (int i = 0; i < THREAD_NUM; i++) {
+                        map[i] = new LongIntHashMap(1024000, 0.99);
+                    }
+                }
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
@@ -157,6 +170,7 @@ public class EngineRace extends AbstractEngine {
                 CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
                 logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
                 logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
+                logger.info("第一个key为 " + keys[0] + " ，最后一个个key为" + keys[CURRENT_KEY_NUM - 1]);
                 //创建 FILE_COUNT个FileChannel 分块写入
                 for (int i = 0; i < FILE_COUNT; i++) {
                     try {
@@ -201,20 +215,29 @@ public class EngineRace extends AbstractEngine {
         int blockHash = valueBlockHash(numkey);
         int fileHash = valueFileHash(numkey);
         // value 写入的 offset，每个块内单独计算off
-        int off = valueOffsets[fileHash][blockHash].getAndIncrement();
-//        if (off >= MAX_NUM_PER_BLOCK) {
-//            logger.info("块内数量已经超出单块限制");
-//        }
+        int off;
         try {
-            ByteBuffer keyBuffer = localBufferKey.get();
-            keyBuffer.putLong(numkey).putInt(off);
-            keyBuffer.flip();
-            keyFileChannels[keyHash].write(keyBuffer, keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
-            keyBuffer.clear();
-            //将value写入buffer
-            ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
-            valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
-            valueBuffer.put(value);
+            if (map[keyHash].containsKey(numkey)) {
+                off = map[keyHash].get(keyHash);
+                ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
+                valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
+                valueBuffer.put(value);
+            } else {
+                off = valueOffsets[fileHash][blockHash].getAndIncrement();
+                if (off >= MAX_NUM_PER_BLOCK) {
+                    logger.info("块内数量已经超出单块限制");
+                }
+                map[keyHash].put(numkey, off);
+                ByteBuffer keyBuffer = localBufferKey.get();
+                keyBuffer.putLong(numkey).putInt(off);
+                keyBuffer.flip();
+                keyFileChannels[keyHash].write(keyBuffer, keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
+                keyBuffer.clear();
+                //将value写入buffer
+                ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
+                valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
+                valueBuffer.put(value);
+            }
         } catch (IOException e) {
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
