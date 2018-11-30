@@ -183,15 +183,15 @@ public class EngineRace extends AbstractEngine {
     }
 
     private int handleDuplicate(int keyNum) {
-        int maxnum = 1;
+        int maxNum = 1;
         for (int i = 1; i < keyNum; ++i) {
             if (keys[i] != keys[i - 1]) {
-                keys[maxnum] = keys[i];
-                offs[maxnum] = offs[i];
-                maxnum++;
+                keys[maxNum] = keys[i];
+                offs[maxNum] = offs[i];
+                maxNum++;
             }
         }
-        return maxnum;
+        return maxNum;
     }
 
     @Override
@@ -202,6 +202,9 @@ public class EngineRace extends AbstractEngine {
         int fileHash = valueFileHash(numkey);
         // value 写入的 offset，每个块内单独计算off
         int off = valueOffsets[fileHash][blockHash].getAndIncrement();
+        if (off >= MAX_NUM_PER_BLOCK) {
+            logger.info("块内数量已经超出单块限制");
+        }
         try {
             ByteBuffer keyBuffer = localBufferKey.get();
             keyBuffer.putLong(numkey).putInt(off);
@@ -244,9 +247,6 @@ public class EngineRace extends AbstractEngine {
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
                 for (int i = 0; i < CURRENT_KEY_NUM; ++i) {
-//                    while (i + 1 < CURRENT_KEY_NUM && keys[i] == keys[i + 1]) {
-//                        ++i;
-//                    }
                     key = keys[i];
                     blockHash = valueBlockHash(key);
                     hash = valueFileHash(key);
@@ -258,6 +258,8 @@ public class EngineRace extends AbstractEngine {
                         visitor.visit(keyBytes, valueBytes);
                         ++i;
                     }
+                    // 上面多+了一位
+                    --i;
                 }
             } catch (Exception e) {
                 e.printStackTrace();
