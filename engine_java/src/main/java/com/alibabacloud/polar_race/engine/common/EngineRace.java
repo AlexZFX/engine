@@ -299,7 +299,7 @@ public class EngineRace extends AbstractEngine {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
         }
-        logger.error("read key = " + numkey + "  value = " + Arrays.toString(localValueBytes.get()));
+        logger.error("read key = " + numkey + "off = " + off + "  value = " + Arrays.toString(localValueBytes.get()));
         return localValueBytes.get();
     }
 
@@ -422,10 +422,10 @@ public class EngineRace extends AbstractEngine {
         int j = (k << 1) + 1;
         while (j <= end) {
             // 比较的数字是 index对应的key
-            if (j + 1 <= end && (keys[j] < keys[j + 1] || (keys[j] == keys[j + 1] && offs[j] > offs[j + 1]))) {
+            if (j + 1 <= end && (keys[j] < keys[j + 1])) {
                 ++j;
             }
-            if (keys[k] > keys[j] || (keys[k] == keys[j] && offs[k] < offs[j])) {
+            if (keys[k] > keys[j]) {
                 break;
             }
             swap(k, j);
