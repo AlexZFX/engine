@@ -102,7 +102,7 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localBlockBuffer = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocate(BLOCK_SIZE);
+            return ByteBuffer.allocateDirect(BLOCK_SIZE);
         }
     };
 
@@ -171,9 +171,9 @@ public class EngineRace extends AbstractEngine {
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
-                CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
-                logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
-                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
+//                CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
+//                logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
+//                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
                 //创建 FILE_COUNT个FileChannel 分块写入
                 for (int i = 0; i < FILE_COUNT; i++) {
                     try {
@@ -201,17 +201,17 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-    private int handleDuplicate(int keyNum) {
-        int maxNum = 1;
-        for (int i = 1; i < keyNum; ++i) {
-            if (keys[i] != keys[i - 1]) {
-                keys[maxNum] = keys[i];
-                offs[maxNum] = offs[i];
-                maxNum++;
-            }
-        }
-        return maxNum;
-    }
+//    private int handleDuplicate(int keyNum) {
+//        int maxNum = 1;
+//        for (int i = 1; i < keyNum; ++i) {
+//            if (keys[i] != keys[i - 1]) {
+//                keys[maxNum] = keys[i];
+//                offs[maxNum] = offs[i];
+//                maxNum++;
+//            }
+//        }
+//        return maxNum;
+//    }
 
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
@@ -294,7 +294,6 @@ public class EngineRace extends AbstractEngine {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
         }
-//        logger.error("read key = " + numkey + "  off = " + off + "  fileHash = " + fileHash + "  blockHash = " + blockHash + "  value = " + Arrays.toString(bytes));
         return bytes;
     }
 
@@ -302,34 +301,38 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
         long key;
-        int hash, blockHash;
+        int fileHash, blockHash, off;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+        ByteBuffer valueBuffer = localBufferValue.get();
         ByteBuffer blockBuffer = localBlockBuffer.get();
-        if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
-            try {
-                for (int i = 0; i < CURRENT_KEY_NUM; ++i) {
-                    key = keys[i];
-                    blockHash = valueBlockHash(key);
-                    hash = valueFileHash(key);
-                    blockBuffer.clear();
-                    fileChannels[hash].read(blockBuffer, fileChannels[hash].read(blockBuffer, blockHash * BLOCK_SIZE));
-                    while (i < CURRENT_KEY_NUM && valueFileHash(keys[i]) == hash && valueBlockHash(keys[i]) == blockHash) {
-                        blockBuffer.get(valueBytes, offs[i] << SHIFT_NUM, VALUE_LEN);
-                        long2bytes(keyBytes, key);
-                        visitor.visit(keyBytes, valueBytes);
-                        ++i;
+        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+        try {
+            for (int i = 0; i < CURRENT_KEY_NUM; ) {
+                key = keys[i];
+                fileHash = valueFileHash(key);
+                blockHash = valueBlockHash(key);
+                fileChannels[fileHash].read(blockBuffer, blockHash * BLOCK_SIZE);
+                while (fileHash == valueFileHash(keys[i]) && blockHash == valueBlockHash(keys[i])) {
+                    off = offs[i];
+                    //如果 off 大于块内最多，说明在temp文件中
+                    if (off >= MAX_NUM_PER_BLOCK) {
+                        tempValueFileChannel.read(valueBuffer, ((long) off) << SHIFT_NUM);
+                        valueBuffer.flip();
+                        valueBuffer.get(valueBytes);
+                        valueBuffer.clear();
+                    } else {
+                        blockBuffer.position(off << SHIFT_NUM);
+                        blockBuffer.get(valueBytes);
                     }
-                    // 上面多+了一位
-                    --i;
+                    long2bytes(keyBytes, keys[i]);
+                    visitor.visit(keyBytes, valueBytes);
+                    ++i;
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
-                throw new EngineException(RetCodeEnum.IO_ERROR, "range read io 出错");
             }
-        } else {
-            throw new EngineException(RetCodeEnum.NOT_SUPPORTED, "range传入的lower，upper 不为空");
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new EngineException(RetCodeEnum.IO_ERROR, "range read io 出错");
         }
     }
 
