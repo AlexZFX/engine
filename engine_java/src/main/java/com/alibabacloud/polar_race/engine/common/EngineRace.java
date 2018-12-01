@@ -201,18 +201,6 @@ public class EngineRace extends AbstractEngine {
         }
     }
 
-//    private int handleDuplicate(int keyNum) {
-//        int maxNum = 1;
-//        for (int i = 1; i < keyNum; ++i) {
-//            if (keys[i] != keys[i - 1]) {
-//                keys[maxNum] = keys[i];
-//                offs[maxNum] = offs[i];
-//                maxNum++;
-//            }
-//        }
-//        return maxNum;
-//    }
-
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
@@ -223,8 +211,8 @@ public class EngineRace extends AbstractEngine {
         int off;
         try {
             // 如果已存在该key，则在key对应的原off位置写入value
-            if (map[keyHash].containsKey(numkey)) {
-                off = map[keyHash].get(numkey);
+            off = map[keyHash].getOrDefault(numkey, -1);
+            if (off != -1) {
                 if (off >= MAX_NUM_PER_BLOCK) {
                     ByteBuffer buffer = localBufferValue.get();
                     buffer.put(value);
@@ -313,7 +301,7 @@ public class EngineRace extends AbstractEngine {
                 fileHash = valueFileHash(key);
                 blockHash = valueBlockHash(key);
                 fileChannels[fileHash].read(blockBuffer, blockHash * BLOCK_SIZE);
-                while (fileHash == valueFileHash(keys[i]) && blockHash == valueBlockHash(keys[i])) {
+                while (i < CURRENT_KEY_NUM && fileHash == valueFileHash(keys[i]) && blockHash == valueBlockHash(keys[i])) {
                     off = offs[i];
                     //如果 off 大于块内最多，说明在temp文件中
                     if (off >= MAX_NUM_PER_BLOCK) {
@@ -348,16 +336,6 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void close() {
         logger.info("--------close--------");
-        for (int i = 0; i < FILE_COUNT; i++) {
-            try {
-//                logger.info("file" + i + " size is " + valueOffsets[i].get());
-                keyFileChannels[i].close();
-                fileChannels[i].close();
-            } catch (Exception e) {
-                e.printStackTrace();
-                logger.error("close error");
-            }
-        }
     }
 
     //取前6位，分为64个文件
