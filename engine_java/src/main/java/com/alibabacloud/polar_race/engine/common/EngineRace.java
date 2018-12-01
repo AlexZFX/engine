@@ -140,6 +140,7 @@ public class EngineRace extends AbstractEngine {
                             offs = new int[KEY_NUM];
                         }
                         final long off = keyOffsets[i].get();
+                        logger.info("第" + i + "个key文件的大小为 ：" + (off / 1024) + "kB");
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
                         CURRENT_KEY_NUM += off / 12;
@@ -241,7 +242,7 @@ public class EngineRace extends AbstractEngine {
             } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
                 off = valueOffsets[fileHash][blockHash].getAndIncrement();
                 if (off % 1000 == 0) {
-                    logger.info("write 此时off 为 " + off);
+                    logger.info("write 此时off 为 " + off + "此时 fileHash 为 " + fileHash + " blockHash 为" + blockHash);
                 }
                 if (off >= MAX_NUM_PER_BLOCK) {
                     ByteBuffer buffer = localBufferValue.get();
