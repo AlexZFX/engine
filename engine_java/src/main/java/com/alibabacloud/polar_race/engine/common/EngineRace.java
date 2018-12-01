@@ -227,7 +227,7 @@ public class EngineRace extends AbstractEngine {
         try {
             // 如果已存在该key，则在key对应的原off位置写入value
             if (map[keyHash].containsKey(numkey)) {
-                off = map[keyHash].get(keyHash);
+                off = map[keyHash].get(numkey);
                 if (off >= MAX_NUM_PER_BLOCK) {
                     ByteBuffer buffer = localBufferValue.get();
                     buffer.put(value);
@@ -260,9 +260,7 @@ public class EngineRace extends AbstractEngine {
                     valueBuffer.put(value);
                 }
                 // 此时文件中写入的off发生改变
-                synchronized (map[keyHash]) {
-                    map[keyHash].put(numkey, off);
-                }
+                map[keyHash].put(numkey, off);
                 ByteBuffer keyBuffer = localBufferKey.get();
                 keyBuffer.putLong(numkey).putInt(off);
                 keyBuffer.flip();
@@ -284,25 +282,26 @@ public class EngineRace extends AbstractEngine {
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
+        byte[] bytes = localValueBytes.get();
         try {
             //如果不在 块中，则去temp文件中读取
             if (off >= MAX_NUM_PER_BLOCK) {
                 ByteBuffer buffer = localBufferValue.get();
                 tempValueFileChannel.read(buffer, ((long) off) << SHIFT_NUM);
                 buffer.flip();
-                buffer.get(localValueBytes.get(), 0, VALUE_LEN);
+                buffer.get(bytes, 0, VALUE_LEN);
                 buffer.clear();
             } else {
                 ByteBuffer buffer = valueMappedByteBuffers[fileHash].slice();
                 buffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
-                buffer.get(localValueBytes.get(), 0, VALUE_LEN);
+                buffer.get(bytes, 0, VALUE_LEN);
             }
         } catch (Exception e) {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
         }
-        logger.error("read key = " + numkey + "  off = " + off + "  fileHash = " + fileHash + "  blockHash = " + blockHash + "  value = " + Arrays.toString(localValueBytes.get()));
-        return localValueBytes.get();
+        logger.error("read key = " + numkey + "  off = " + off + "  fileHash = " + fileHash + "  blockHash = " + blockHash + "  value = " + Arrays.toString(bytes));
+        return bytes;
     }
 
 
