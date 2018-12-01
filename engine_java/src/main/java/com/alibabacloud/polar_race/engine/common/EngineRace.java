@@ -260,7 +260,9 @@ public class EngineRace extends AbstractEngine {
                     valueBuffer.put(value);
                 }
                 // 此时文件中写入的off发生改变
-                map[keyHash].put(numkey, off);
+                synchronized (map[keyHash]) {
+                    map[keyHash].put(numkey, off);
+                }
                 ByteBuffer keyBuffer = localBufferKey.get();
                 keyBuffer.putLong(numkey).putInt(off);
                 keyBuffer.flip();
@@ -299,7 +301,7 @@ public class EngineRace extends AbstractEngine {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
         }
-        logger.error("read key = " + numkey + "off = " + off + "  value = " + Arrays.toString(localValueBytes.get()));
+        logger.error("read key = " + numkey + "  off = " + off + "  fileHash = " + fileHash + "  blockHash = " + blockHash + "  value = " + Arrays.toString(localValueBytes.get()));
         return localValueBytes.get();
     }
 
@@ -425,7 +427,7 @@ public class EngineRace extends AbstractEngine {
             if (j + 1 <= end && (keys[j] < keys[j + 1])) {
                 ++j;
             }
-            if (keys[k] > keys[j]) {
+            if (keys[k] >= keys[j]) {
                 break;
             }
             swap(k, j);
