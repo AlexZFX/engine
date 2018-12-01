@@ -12,7 +12,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -165,8 +164,6 @@ public class EngineRace extends AbstractEngine {
                     for (int i = 0; i < THREAD_NUM; i++) {
                         map[i] = new LongIntHashMap(1024000, 0.99);
                     }
-                } else {
-                    logger.info("第一个key为 " + keys[0] + " ，最后一个个key为" + keys[CURRENT_KEY_NUM - 1]);
                 }
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
@@ -242,9 +239,6 @@ public class EngineRace extends AbstractEngine {
                 }
             } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
                 off = valueOffsets[fileHash][blockHash].getAndIncrement();
-                if (off % 1000 == 0) {
-                    logger.info("write 此时off 为 " + off + "此时 fileHash 为 " + fileHash + " blockHash 为" + blockHash);
-                }
                 if (off >= MAX_NUM_PER_BLOCK) {
                     ByteBuffer buffer = localBufferValue.get();
                     buffer.put(value);
@@ -300,7 +294,7 @@ public class EngineRace extends AbstractEngine {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
         }
-        logger.error("read key = " + numkey + "  off = " + off + "  fileHash = " + fileHash + "  blockHash = " + blockHash + "  value = " + Arrays.toString(bytes));
+//        logger.error("read key = " + numkey + "  off = " + off + "  fileHash = " + fileHash + "  blockHash = " + blockHash + "  value = " + Arrays.toString(bytes));
         return bytes;
     }
 
