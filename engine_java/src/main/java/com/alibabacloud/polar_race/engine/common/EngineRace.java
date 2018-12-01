@@ -66,6 +66,10 @@ public class EngineRace extends AbstractEngine {
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
     //每个valueOffsets表示的都是第i个文件中的value数量
     private static AtomicInteger[][] valueOffsets = new AtomicInteger[FILE_COUNT][BLOCK_NUM];
+    //temp off 直接从 max_num_per_block开始计算，避免和正常的offset弄混
+    private AtomicInteger tempOffset = new AtomicInteger(MAX_NUM_PER_BLOCK);
+
+    private FileChannel tempValueFileChannel;
 
     private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -183,6 +187,8 @@ public class EngineRace extends AbstractEngine {
                         e.printStackTrace();
                     }
                 }
+                randomAccessFile = new RandomAccessFile(path + File.separator + "temp.data", "rw");
+                tempValueFileChannel = randomAccessFile.getChannel();
                 for (int i = 0; i < FILE_COUNT; i++) {
                     for (int j = 0; j < BLOCK_NUM; j++) {
                         valueOffsets[i][j] = new AtomicInteger(0);
@@ -217,26 +223,46 @@ public class EngineRace extends AbstractEngine {
         // value 写入的 offset，每个块内单独计算off
         int off;
         try {
+            // 如果已存在该key，则在key对应的原off位置写入value
             if (map[keyHash].containsKey(numkey)) {
                 off = map[keyHash].get(keyHash);
-                ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
-                valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
-                valueBuffer.put(value);
-            } else {
-                off = valueOffsets[fileHash][blockHash].getAndIncrement();
                 if (off >= MAX_NUM_PER_BLOCK) {
-                    logger.info("块内数量已经超出单块限制");
+                    ByteBuffer buffer = localBufferValue.get();
+                    buffer.put(value);
+                    buffer.flip();
+                    tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
+                    buffer.clear();
+                } else {
+                    //将value写入buffer
+                    ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
+                    valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
+                    valueBuffer.put(value);
                 }
+            } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
+                off = valueOffsets[fileHash][blockHash].getAndIncrement();
+                if (off % 1000 == 0) {
+                    logger.info("write 此时off 为 " + off);
+                }
+                if (off >= MAX_NUM_PER_BLOCK) {
+                    ByteBuffer buffer = localBufferValue.get();
+                    buffer.put(value);
+                    buffer.flip();
+                    off = tempOffset.getAndIncrement();
+                    tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
+                    buffer.clear();
+                } else {
+                    //将value写入buffer
+                    ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
+                    valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
+                    valueBuffer.put(value);
+                }
+                // 此时文件中写入的off发生改变
                 map[keyHash].put(numkey, off);
                 ByteBuffer keyBuffer = localBufferKey.get();
                 keyBuffer.putLong(numkey).putInt(off);
                 keyBuffer.flip();
                 keyFileChannels[keyHash].write(keyBuffer, keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
                 keyBuffer.clear();
-                //将value写入buffer
-                ByteBuffer valueBuffer = valueMappedByteBuffers[fileHash].slice();
-                valueBuffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
-                valueBuffer.put(value);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -253,9 +279,23 @@ public class EngineRace extends AbstractEngine {
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
         }
-        ByteBuffer buffer = valueMappedByteBuffers[fileHash].slice();
-        buffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
-        buffer.get(localValueBytes.get(), 0, VALUE_LEN);
+        try {
+            //如果不在 块中，则去temp文件中读取
+            if (off >= MAX_NUM_PER_BLOCK) {
+                ByteBuffer buffer = localBufferValue.get();
+                tempValueFileChannel.read(buffer, ((long) off) << SHIFT_NUM);
+                buffer.flip();
+                buffer.get(localValueBytes.get(), 0, VALUE_LEN);
+                buffer.clear();
+            } else {
+                ByteBuffer buffer = valueMappedByteBuffers[fileHash].slice();
+                buffer.position((blockHash * BLOCK_SIZE) + (off << SHIFT_NUM));
+                buffer.get(localValueBytes.get(), 0, VALUE_LEN);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
+        }
         return localValueBytes.get();
     }
 
@@ -266,7 +306,7 @@ public class EngineRace extends AbstractEngine {
         int hash, blockHash;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-        logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         ByteBuffer blockBuffer = localBlockBuffer.get();
         if ((lower == null || lower.length < 1) && (upper == null || upper.length < 1)) {
             try {
