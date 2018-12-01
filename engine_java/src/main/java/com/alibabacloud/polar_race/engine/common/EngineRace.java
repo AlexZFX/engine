@@ -39,7 +39,7 @@ public class EngineRace extends AbstractEngine {
 
     private static final int BLOCK_NUM = 512;
 
-    private static final int BLOCK_SIZE = 8847360;
+    private static final long BLOCK_SIZE = 8847360L;
     // BLOCK_SIZE / VALUE_LEN
     private static final int MAX_NUM_PER_BLOCK = 2160;
 
@@ -100,7 +100,7 @@ public class EngineRace extends AbstractEngine {
     private static FastThreadLocal<ByteBuffer> localBlockBuffer = new FastThreadLocal<ByteBuffer>() {
         @Override
         protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect(BLOCK_SIZE);
+            return ByteBuffer.allocateDirect((int) BLOCK_SIZE);
         }
     };
 
@@ -216,7 +216,7 @@ public class EngineRace extends AbstractEngine {
                     tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
                 } else {
                     //将value写入buffer
-                    fileChannels[hash].write(buffer, (blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
+                    fileChannels[hash].write(buffer, ((long) blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
                 }
             } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
                 off = valueOffsets[hash][blockHash].getAndIncrement();
@@ -226,7 +226,7 @@ public class EngineRace extends AbstractEngine {
                     tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
                 } else {
                     //将value写入buffer
-                    fileChannels[hash].write(buffer, (blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
+                    fileChannels[hash].write(buffer, ((long) blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
                 }
                 // 此时文件中写入的off发生改变
                 map[hash].put(numkey, off);
@@ -260,7 +260,7 @@ public class EngineRace extends AbstractEngine {
                 tempValueFileChannel.read(buffer, ((long) off) << SHIFT_NUM);
 
             } else {
-                fileChannels[hash].read(buffer, (blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
+                fileChannels[hash].read(buffer, ((long) blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
             }
             buffer.flip();
             buffer.get(bytes, 0, VALUE_LEN);
@@ -287,7 +287,7 @@ public class EngineRace extends AbstractEngine {
                 key = keys[i];
                 fileHash = keyFileHash(key);
                 blockHash = valueBlockHash(key);
-                fileChannels[fileHash].read(blockBuffer, blockHash * BLOCK_SIZE);
+                fileChannels[fileHash].read(blockBuffer, ((long) blockHash) * BLOCK_SIZE);
                 while (i < CURRENT_KEY_NUM && fileHash == keyFileHash(keys[i]) && blockHash == valueBlockHash(keys[i])) {
                     off = offs[i];
                     //如果 off 大于块内最多，说明在temp文件中
