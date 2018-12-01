@@ -329,6 +329,7 @@ public class EngineRace extends AbstractEngine {
                     visitor.visit(keyBytes, valueBytes);
                     ++i;
                 }
+                blockBuffer.clear();
             }
         } catch (Exception e) {
             e.printStackTrace();
