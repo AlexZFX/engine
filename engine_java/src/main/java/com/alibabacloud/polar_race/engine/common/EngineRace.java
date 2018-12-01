@@ -12,6 +12,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,7 +36,7 @@ public class EngineRace extends AbstractEngine {
     private static final int FILE_COUNT = 256;
 
     //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 1080m
-    private static final int FILE_SIZE = 1132462080;
+    private static final int VALUE_FILE_SIZE = 1132462080;
 
     private static final int BLOCK_NUM = 128;
 
@@ -143,7 +144,7 @@ public class EngineRace extends AbstractEngine {
                         logger.info("第" + i + "个key文件的大小为 ：" + (off / 1024) + "kB");
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
-                        CURRENT_KEY_NUM += off / 12;
+                        CURRENT_KEY_NUM += off / KEY_AND_OFF_LEN;
                         final MappedByteBuffer buffer = keyFileChannels[i].map(FileChannel.MapMode.READ_ONLY, 0, keyOffsets[i].get());
                         new Thread(() -> {
                             int start = 0;
@@ -183,7 +184,7 @@ public class EngineRace extends AbstractEngine {
                         FileChannel channel = randomAccessFile.getChannel();
                         fileChannels[i] = channel;
                         // 从 length处直接写入
-                        valueMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, FILE_SIZE);
+                        valueMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, VALUE_FILE_SIZE);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -248,6 +249,7 @@ public class EngineRace extends AbstractEngine {
                     ByteBuffer buffer = localBufferValue.get();
                     buffer.put(value);
                     buffer.flip();
+                    //因为off过块了，写入到temp文件中去
                     off = tempOffset.getAndIncrement();
                     tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
                     buffer.clear();
@@ -297,6 +299,7 @@ public class EngineRace extends AbstractEngine {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "read 出错");
         }
+        logger.error("read key = " + numkey + "  value = " + Arrays.toString(localValueBytes.get()));
         return localValueBytes.get();
     }
 
