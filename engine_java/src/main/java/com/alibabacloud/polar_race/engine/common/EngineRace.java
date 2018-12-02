@@ -13,11 +13,14 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 public class EngineRace extends AbstractEngine {
 
@@ -77,6 +80,8 @@ public class EngineRace extends AbstractEngine {
         caches[1] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
     }
 
+    private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
+
     private volatile boolean isFirst = true;
     //初始设置为 1 跳过第一块
     private volatile int fileReadCount = 1;
@@ -93,6 +98,10 @@ public class EngineRace extends AbstractEngine {
                         try {
                             caches[1].clear();
                             fileChannels[fileReadCount].read(caches[1]);
+                            cyclicBarrier.reset();
+                            for (Thread thread : threadList) {
+                                LockSupport.unpark(thread);
+                            }
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
@@ -103,6 +112,10 @@ public class EngineRace extends AbstractEngine {
                         try {
                             caches[0].clear();
                             fileChannels[fileReadCount].read(caches[0]);
+                            cyclicBarrier.reset();
+                            for (Thread thread : threadList) {
+                                LockSupport.unpark(thread);
+                            }
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
@@ -304,6 +317,9 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
+        synchronized (threadList) {
+            threadList.add(Thread.currentThread());
+        }
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
@@ -315,8 +331,8 @@ public class EngineRace extends AbstractEngine {
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await();
-                // 多次执行没关系
-                cyclicBarrier.reset();
+//                //多次执行没关系
+//                cyclicBarrier.reset();
                 num = valueOffsets[i].get();
                 buffer = sharedBuffer.slice();
                 logger.info(i + " buffer num: " + num);
@@ -328,7 +344,10 @@ public class EngineRace extends AbstractEngine {
                 }
                 count += num;
                 logger.info(i + " read end count: " + count);
-
+                // 只有下一块内存已经准备好之后才继续执行
+                if (fileReadCount < 511) {
+                    LockSupport.park();
+                }
             }
 
         } catch (Exception e) {
@@ -351,21 +370,16 @@ public class EngineRace extends AbstractEngine {
     }
 
     //取前6位，分为64个文件
-    private static int keyFileHash(long key) {
-        return (int) (key >>> 58);
-//        return (int) (key & HASH_VALUE);
-    }
+//    private static int keyFileHash(long key) {
+//        return (int) (key >>> 58);
+////        return (int) (key & HASH_VALUE);
+//    }
 
-    //    取前8位，分为256个文件
+    //    取前9位，分为512个文件
     private static int valueFileHash(long key) {
         return (int) (key >>> 55);
 //        return (int) (key & HASH_VALUE);
     }
-
-    // value文件分512个block
-//    private static int valueBlockHash(long key) {
-//        return (int) ((key >>> 49) & HASH_VALUE);
-//    }
 
     private int getKey(long numkey) {
         int l = 0, r = CURRENT_KEY_NUM - 1, mid;
