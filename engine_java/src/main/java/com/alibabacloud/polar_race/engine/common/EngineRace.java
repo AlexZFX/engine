@@ -15,10 +15,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
@@ -330,7 +327,7 @@ public class EngineRace extends AbstractEngine {
 
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
-                cyclicBarrier.await();
+                cyclicBarrier.await(20, TimeUnit.SECONDS);
 //                //多次执行没关系
 //                cyclicBarrier.reset();
                 num = valueOffsets[i].get();
@@ -346,7 +343,7 @@ public class EngineRace extends AbstractEngine {
                 logger.info(i + " read end count: " + count);
                 // 只有下一块内存已经准备好之后才继续执行
                 if (fileReadCount < 511) {
-                    LockSupport.park();
+                    LockSupport.parkNanos(20000000000L);
                 }
             }
 
