@@ -84,7 +84,7 @@ public class EngineRace extends AbstractEngine {
 
     private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
-    private volatile CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
+    private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
         @Override
         public void run() {
             if (fileReadCount < 512) {
@@ -328,7 +328,11 @@ public class EngineRace extends AbstractEngine {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
                 //多次执行没关系
-                cyclicBarrier.reset();
+                synchronized (cyclicBarrier) {
+                    if (cyclicBarrier.isBroken()) {
+                        cyclicBarrier.reset();
+                    }
+                }
                 num = valueOffsets[i].get();
                 buffer = sharedBuffer.slice();
                 logger.info(i + " buffer num: " + num);
