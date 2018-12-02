@@ -335,7 +335,7 @@ public class EngineRace extends AbstractEngine {
                 }
                 num = valueOffsets[i].get();
                 buffer = sharedBuffer.slice();
-                logger.info(i + " buffer num: " + num);
+                logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; j++) {
                     buffer.position(offs[count + j] << SHIFT_NUM);
                     buffer.get(valueBytes);
@@ -343,7 +343,7 @@ public class EngineRace extends AbstractEngine {
                     visitor.visit(keyBytes, valueBytes);
                 }
                 count += num;
-                logger.info(i + " read end count: " + count);
+                logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
 //                 只有下一块内存已经准备好之后才继续执行
 //                if (fileReadCount < 511) {
 //                    LockSupport.parkNanos(20000000000L);
