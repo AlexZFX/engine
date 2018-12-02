@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 
 public class EngineRace extends AbstractEngine {
 
@@ -96,9 +95,9 @@ public class EngineRace extends AbstractEngine {
                             caches[1].clear();
                             fileChannels[fileReadCount].read(caches[1]);
                             cyclicBarrier.reset();
-                            for (Thread thread : threadList) {
-                                LockSupport.unpark(thread);
-                            }
+//                            for (Thread thread : threadList) {
+//                                LockSupport.unpark(thread);
+//                            }
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
@@ -110,9 +109,9 @@ public class EngineRace extends AbstractEngine {
                             caches[0].clear();
                             fileChannels[fileReadCount].read(caches[0]);
                             cyclicBarrier.reset();
-                            for (Thread thread : threadList) {
-                                LockSupport.unpark(thread);
-                            }
+//                            for (Thread thread : threadList) {
+//                                LockSupport.unpark(thread);
+//                            }
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
@@ -342,9 +341,9 @@ public class EngineRace extends AbstractEngine {
                 count += num;
                 logger.info(i + " read end count: " + count);
                 // 只有下一块内存已经准备好之后才继续执行
-                if (fileReadCount < 511) {
-                    LockSupport.parkNanos(20000000000L);
-                }
+//                if (fileReadCount < 511) {
+//                    LockSupport.parkNanos(20000000000L);
+//                }
             }
 
         } catch (Exception e) {
