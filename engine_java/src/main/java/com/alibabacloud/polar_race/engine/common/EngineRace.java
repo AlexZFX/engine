@@ -94,7 +94,7 @@ public class EngineRace extends AbstractEngine {
                         try {
                             caches[1].clear();
                             fileChannels[fileReadCount].read(caches[1]);
-                            cyclicBarrier.reset();
+//                            cyclicBarrier.reset();
 //                            for (Thread thread : threadList) {
 //                                LockSupport.unpark(thread);
 //                            }
@@ -108,7 +108,7 @@ public class EngineRace extends AbstractEngine {
                         try {
                             caches[0].clear();
                             fileChannels[fileReadCount].read(caches[0]);
-                            cyclicBarrier.reset();
+//                            cyclicBarrier.reset();
 //                            for (Thread thread : threadList) {
 //                                LockSupport.unpark(thread);
 //                            }
@@ -327,8 +327,8 @@ public class EngineRace extends AbstractEngine {
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
-//                //多次执行没关系
-//                cyclicBarrier.reset();
+                //多次执行没关系
+                cyclicBarrier.reset();
                 num = valueOffsets[i].get();
                 buffer = sharedBuffer.slice();
                 logger.info(i + " buffer num: " + num);
