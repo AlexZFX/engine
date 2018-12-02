@@ -8,11 +8,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class EngineRace extends AbstractEngine {
@@ -64,11 +68,51 @@ public class EngineRace extends AbstractEngine {
     private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
     // 一大块共享缓存
-    private volatile ByteBuffer sharedBuffer = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+    private volatile ByteBuffer sharedBuffer;
 
-    private volatile int threadCount = 64;
+    private static ByteBuffer[] caches = new ByteBuffer[2];
 
-    private volatile CountDownLatch valueCountDownLatch = new CountDownLatch(THREAD_NUM);
+    static {
+        caches[0] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+        caches[1] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+    }
+
+    private volatile boolean isFirst = true;
+    //初始设置为 1 跳过第一块
+    private volatile int fileReadCount = 1;
+
+    private static ExecutorService executors = Executors.newSingleThreadExecutor();
+
+    private volatile CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
+        @Override
+        public void run() {
+            if (fileReadCount < 512) {
+                if (isFirst) {
+                    sharedBuffer = caches[0];
+                    executors.execute(() -> {
+                        try {
+                            caches[1].clear();
+                            fileChannels[fileReadCount].read(caches[1]);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    });
+                } else {
+                    sharedBuffer = caches[1];
+                    executors.execute(() -> {
+                        try {
+                            caches[0].clear();
+                            fileChannels[fileReadCount].read(caches[0]);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    });
+                }
+                ++fileReadCount;
+                isFirst = !isFirst;
+            }
+        }
+    });
 
 
     private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
@@ -170,7 +214,8 @@ public class EngineRace extends AbstractEngine {
                         e.printStackTrace();
                     }
                 }
-
+                // 对range时的第一块进行初始化
+                fileChannels[0].read(caches[0]);
                 //获取完之后对key进行排序
 
                 long sortStartTime = System.currentTimeMillis();
@@ -266,25 +311,12 @@ public class EngineRace extends AbstractEngine {
         logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         try {
             // 第一次初始化sharedBuffer
-            if (sharedBuffer.position() == 0) {
-                synchronized (sharedBuffer) {
-                    if (sharedBuffer.position() == 0) {
-                        fileChannels[0].read(sharedBuffer);
-                    }
-                }
-            }
-            valueCountDownLatch.countDown();
-            logger.info("-----first init sharedbuffer-----");
 
             for (int i = 0; i < FILE_COUNT; i++) {
-                logger.info("----- sharedbuffer cache " + i + " block -----");
-                valueCountDownLatch.await();
-                synchronized (valueCountDownLatch) {
-                    if (valueCountDownLatch.getCount() == 0) {
-                        valueCountDownLatch = new CountDownLatch(64);
-                    }
-                }
-
+                // 64 个屏障都到了才继续运行，运行前先获取buffer
+                cyclicBarrier.await();
+                // 多次执行没关系
+                cyclicBarrier.reset();
                 num = valueOffsets[i].get();
                 buffer = sharedBuffer.slice();
                 logger.info(i + " buffer num: " + num);
@@ -296,16 +328,7 @@ public class EngineRace extends AbstractEngine {
                 }
                 count += num;
                 logger.info(i + " read end count: " + count);
-                synchronized (valueCountDownLatch) {
-                    if (valueCountDownLatch.getCount() == 1) {
-                        if (i + 1 < FILE_COUNT) {
-                            sharedBuffer.clear();
-                            fileChannels[i + 1].read(sharedBuffer);
-                        }
-                    }
-                    logger.info(i + " buffer read end");
-                    valueCountDownLatch.countDown();
-                }
+
             }
 
         } catch (Exception e) {
