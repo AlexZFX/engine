@@ -337,14 +337,14 @@ public class EngineRace extends AbstractEngine {
                 buffer = sharedBuffer.slice();
                 logger.info(i + " buffer num: " + num);
                 for (int j = 0; j < num; j++) {
-                    buffer.position(offs[count + j]);
+                    buffer.position(offs[count + j] << SHIFT_NUM);
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count + j]);
                     visitor.visit(keyBytes, valueBytes);
                 }
                 count += num;
                 logger.info(i + " read end count: " + count);
-                // 只有下一块内存已经准备好之后才继续执行
+//                 只有下一块内存已经准备好之后才继续执行
 //                if (fileReadCount < 511) {
 //                    LockSupport.parkNanos(20000000000L);
 //                }
