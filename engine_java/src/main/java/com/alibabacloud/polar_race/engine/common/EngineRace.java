@@ -32,18 +32,16 @@ public class EngineRace extends AbstractEngine {
 
     private static final int SHIFT_NUM = 12;
     // 存放 value 的文件数量 128
-    private static final int FILE_COUNT = 64;
+    private static final int FILE_COUNT = 512;
 
     //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 4320m
-    private static final long VALUE_FILE_SIZE = 4529848320L;
+    private static final int VALUE_FILE_SIZE = 520 * 1024 * 1024;
 
-    private static final int BLOCK_NUM = 512;
-
-    private static final long BLOCK_SIZE = 8847360L;
+//    private static final long BLOCK_SIZE = 8847360L;
     // BLOCK_SIZE / VALUE_LEN
-    private static final int MAX_NUM_PER_BLOCK = 2160;
+//    private static final int MAX_NUM_PER_BLOCK = 2160;
 
-    private static final int HASH_VALUE = 0x1FF;
+    //    private static final int HASH_VALUE = 0x1FF;
     // 第i个key
 //    private static final long[] keys = new long[KEY_NUM];
     private static long[] keys;
@@ -63,11 +61,15 @@ public class EngineRace extends AbstractEngine {
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
     //每个valueOffsets表示的都是第i个文件中的value数量
-    private static AtomicInteger[][] valueOffsets = new AtomicInteger[FILE_COUNT][BLOCK_NUM];
-    //temp off 直接从 max_num_per_block开始计算，避免和正常的offset弄混
-    private AtomicInteger tempOffset = new AtomicInteger(MAX_NUM_PER_BLOCK);
+    private static AtomicInteger[] valueOffsets = new AtomicInteger[FILE_COUNT];
 
-    private FileChannel tempValueFileChannel;
+    // 一大块共享缓存
+    private volatile ByteBuffer sharedBuffer = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
+
+    private volatile int threadCount = 64;
+
+    private volatile CountDownLatch valueCountDownLatch = new CountDownLatch(THREAD_NUM);
+
 
     private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -97,14 +99,8 @@ public class EngineRace extends AbstractEngine {
         }
     };
 
-    private static FastThreadLocal<ByteBuffer> localBlockBuffer = new FastThreadLocal<ByteBuffer>() {
-        @Override
-        protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocateDirect((int) BLOCK_SIZE);
-        }
-    };
-
     private int CURRENT_KEY_NUM;
+
 
     @Override
     public void open(String path) throws EngineException {
@@ -163,7 +159,20 @@ public class EngineRace extends AbstractEngine {
                         map[i] = new LongIntHashMap(1024000, 0.99);
                     }
                 }
+
+                for (int i = 0; i < FILE_COUNT; i++) {
+                    try {
+                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+                        FileChannel channel = randomAccessFile.getChannel();
+                        fileChannels[i] = channel;
+                        valueOffsets[i] = new AtomicInteger((int) (channel.size() >>> SHIFT_NUM));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+
                 //获取完之后对key进行排序
+
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
                 long sortEndTime = System.currentTimeMillis();
@@ -173,23 +182,6 @@ public class EngineRace extends AbstractEngine {
 //                logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
 //                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
                 //创建 FILE_COUNT个FileChannel 分块写入
-                for (int i = 0; i < FILE_COUNT; i++) {
-                    try {
-                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                        randomAccessFile.setLength(VALUE_FILE_SIZE);
-                        FileChannel channel = randomAccessFile.getChannel();
-                        fileChannels[i] = channel;
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-                randomAccessFile = new RandomAccessFile(path + File.separator + "temp.data", "rw");
-                tempValueFileChannel = randomAccessFile.getChannel();
-                for (int i = 0; i < FILE_COUNT; i++) {
-                    for (int j = 0; j < BLOCK_NUM; j++) {
-                        valueOffsets[i][j] = new AtomicInteger(0);
-                    }
-                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -201,8 +193,8 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void write(byte[] key, byte[] value) throws EngineException {
         long numkey = Util.bytes2long(key);
-        int hash = keyFileHash(numkey);
-        int blockHash = valueBlockHash(numkey);
+        int fileHash = valueFileHash(numkey);
+        int keyHash = fileHash >>> 3;
         // value 写入的 offset，每个块内单独计算off
         int off;
         try {
@@ -210,44 +202,41 @@ public class EngineRace extends AbstractEngine {
             ByteBuffer buffer = localBufferValue.get();
             buffer.put(value);
             buffer.flip();
-            off = map[hash].getOrDefault(numkey, -1);
+
+            off = map[keyHash].getOrDefault(numkey, -1);
+
             if (off != -1) {
-                if (off >= MAX_NUM_PER_BLOCK) {
-                    tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
-                } else {
-                    //将value写入buffer
-                    fileChannels[hash].write(buffer, ((long) blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
-                }
+                //将value写入buffer
+                fileChannels[fileHash].write(buffer, (long) off << SHIFT_NUM);
             } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
-                off = valueOffsets[hash][blockHash].getAndIncrement();
-                if (off >= MAX_NUM_PER_BLOCK) {
-                    //因为off过块了，写入到temp文件中去
-                    off = tempOffset.getAndIncrement();
-                    tempValueFileChannel.write(buffer, ((long) off) << SHIFT_NUM);
-                } else {
-                    //将value写入buffer
-                    fileChannels[hash].write(buffer, ((long) blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
-                }
+                //将value写入buffer
+                off = valueOffsets[fileHash].getAndIncrement();
+                fileChannels[fileHash].write(buffer, (long) off << SHIFT_NUM);
+
                 // 此时文件中写入的off发生改变
-                map[hash].put(numkey, off);
+                map[keyHash].put(numkey, off);
                 ByteBuffer keyBuffer = localBufferKey.get();
                 keyBuffer.putLong(numkey).putInt(off);
                 keyBuffer.flip();
-                keyFileChannels[hash].write(keyBuffer, keyOffsets[hash].getAndAdd(KEY_AND_OFF_LEN));
+                keyFileChannels[keyHash].write(keyBuffer, keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
                 keyBuffer.clear();
             }
             buffer.clear();
-        } catch (Exception e) {
+        } catch (
+                Exception e)
+
+        {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
+
     }
 
 
     @Override
     public byte[] read(byte[] key) throws EngineException {
         long numkey = Util.bytes2long(key);
-        int hash = keyFileHash(numkey), blockHash = valueBlockHash(numkey);
+        int fileHash = valueFileHash(numkey);
         int off = getKey(numkey);
         if (off == -1) {
             throw new EngineException(RetCodeEnum.NOT_FOUND, numkey + "不存在");
@@ -256,12 +245,7 @@ public class EngineRace extends AbstractEngine {
         try {
             ByteBuffer buffer = localBufferValue.get();
             //如果不在 块中，则去temp文件中读取
-            if (off >= MAX_NUM_PER_BLOCK) {
-                tempValueFileChannel.read(buffer, ((long) off) << SHIFT_NUM);
-
-            } else {
-                fileChannels[hash].read(buffer, ((long) blockHash * BLOCK_SIZE) + ((long) off << SHIFT_NUM));
-            }
+            fileChannels[fileHash].read(buffer, (long) off << SHIFT_NUM);
             buffer.flip();
             buffer.get(bytes, 0, VALUE_LEN);
             buffer.clear();
@@ -275,37 +259,51 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void range(byte[] lower, byte[] upper, AbstractVisitor visitor) throws EngineException {
-        long key;
-        int fileHash, blockHash, off;
+        int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-        ByteBuffer valueBuffer = localBufferValue.get();
-        ByteBuffer blockBuffer = localBlockBuffer.get();
+        ByteBuffer buffer;
         logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         try {
-            for (int i = 0; i < CURRENT_KEY_NUM; ) {
-                key = keys[i];
-                fileHash = keyFileHash(key);
-                blockHash = valueBlockHash(key);
-                fileChannels[fileHash].read(blockBuffer, ((long) blockHash) * BLOCK_SIZE);
-                while (i < CURRENT_KEY_NUM && fileHash == keyFileHash(keys[i]) && blockHash == valueBlockHash(keys[i])) {
-                    off = offs[i];
-                    //如果 off 大于块内最多，说明在temp文件中
-                    if (off >= MAX_NUM_PER_BLOCK) {
-                        tempValueFileChannel.read(valueBuffer, ((long) off) << SHIFT_NUM);
-                        valueBuffer.flip();
-                        valueBuffer.get(valueBytes);
-                        valueBuffer.clear();
-                    } else {
-                        blockBuffer.position(off << SHIFT_NUM);
-                        blockBuffer.get(valueBytes);
+            // 第一次初始化sharedBuffer
+            if (sharedBuffer.position() == 0) {
+                synchronized (sharedBuffer) {
+                    if (sharedBuffer.position() == 0) {
+                        fileChannels[0].read(sharedBuffer);
                     }
-                    long2bytes(keyBytes, keys[i]);
-                    visitor.visit(keyBytes, valueBytes);
-                    ++i;
                 }
-                blockBuffer.clear();
             }
+            valueCountDownLatch.countDown();
+
+            for (int i = 0; i < FILE_COUNT; i++) {
+                valueCountDownLatch.await();
+                synchronized (valueCountDownLatch) {
+                    if (valueCountDownLatch.getCount() == 0) {
+                        valueCountDownLatch = new CountDownLatch(64);
+                    }
+                }
+
+                num = valueOffsets[i].get();
+                buffer = sharedBuffer.slice();
+                for (int j = 0; j < num; j++) {
+                    buffer.position(offs[count + j]);
+                    buffer.get(valueBytes);
+                    long2bytes(keyBytes, keys[count + j]);
+                    visitor.visit(keyBytes, valueBytes);
+                }
+                count += num;
+
+                synchronized (valueCountDownLatch) {
+                    if (valueCountDownLatch.getCount() == 1) {
+                        if (i + 1 < FILE_COUNT) {
+                            sharedBuffer.clear();
+                            fileChannels[i + 1].read(sharedBuffer);
+                        }
+                    }
+                    valueCountDownLatch.countDown();
+                }
+            }
+
         } catch (Exception e) {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "range read io 出错");
@@ -331,16 +329,16 @@ public class EngineRace extends AbstractEngine {
 //        return (int) (key & HASH_VALUE);
     }
 
-    //取前8位，分为256个文件
-//    private static int valueFileHash(long key) {
-//        return (int) (key >>> 56);
-////        return (int) (key & HASH_VALUE);
-//    }
+    //    取前8位，分为256个文件
+    private static int valueFileHash(long key) {
+        return (int) (key >>> 55);
+//        return (int) (key & HASH_VALUE);
+    }
 
     // value文件分512个block
-    private static int valueBlockHash(long key) {
-        return (int) ((key >>> 49) & HASH_VALUE);
-    }
+//    private static int valueBlockHash(long key) {
+//        return (int) ((key >>> 49) & HASH_VALUE);
+//    }
 
     private int getKey(long numkey) {
         int l = 0, r = CURRENT_KEY_NUM - 1, mid;
