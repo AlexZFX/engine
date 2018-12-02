@@ -274,8 +274,10 @@ public class EngineRace extends AbstractEngine {
                 }
             }
             valueCountDownLatch.countDown();
+            logger.info("-----first init sharedbuffer-----");
 
             for (int i = 0; i < FILE_COUNT; i++) {
+                logger.info("----- sharedbuffer cache " + i + " block -----");
                 valueCountDownLatch.await();
                 synchronized (valueCountDownLatch) {
                     if (valueCountDownLatch.getCount() == 0) {
@@ -285,6 +287,7 @@ public class EngineRace extends AbstractEngine {
 
                 num = valueOffsets[i].get();
                 buffer = sharedBuffer.slice();
+                logger.info(i + " buffer num: " + num);
                 for (int j = 0; j < num; j++) {
                     buffer.position(offs[count + j]);
                     buffer.get(valueBytes);
@@ -292,7 +295,7 @@ public class EngineRace extends AbstractEngine {
                     visitor.visit(keyBytes, valueBytes);
                 }
                 count += num;
-
+                logger.info(i + " read end count: " + count);
                 synchronized (valueCountDownLatch) {
                     if (valueCountDownLatch.getCount() == 1) {
                         if (i + 1 < FILE_COUNT) {
@@ -300,6 +303,7 @@ public class EngineRace extends AbstractEngine {
                             fileChannels[i + 1].read(sharedBuffer);
                         }
                     }
+                    logger.info(i + " buffer read end");
                     valueCountDownLatch.countDown();
                 }
             }
