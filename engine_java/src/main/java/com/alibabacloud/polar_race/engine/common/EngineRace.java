@@ -88,12 +88,13 @@ public class EngineRace extends AbstractEngine {
         @Override
         public void run() {
             if (fileReadCount < 512) {
+                final int tempCount = fileReadCount;
                 if (isFirst) {
                     sharedBuffer = caches[0];
                     executors.execute(() -> {
                         try {
                             caches[1].clear();
-                            fileChannels[fileReadCount].read(caches[1]);
+                            fileChannels[tempCount].read(caches[1]);
 //                            cyclicBarrier.reset();
 //                            for (Thread thread : threadList) {
 //                                LockSupport.unpark(thread);
@@ -107,7 +108,7 @@ public class EngineRace extends AbstractEngine {
                     executors.execute(() -> {
                         try {
                             caches[0].clear();
-                            fileChannels[fileReadCount].read(caches[0]);
+                            fileChannels[tempCount].read(caches[0]);
 //                            cyclicBarrier.reset();
 //                            for (Thread thread : threadList) {
 //                                LockSupport.unpark(thread);
@@ -277,9 +278,7 @@ public class EngineRace extends AbstractEngine {
             }
             buffer.clear();
         } catch (
-                Exception e)
-
-        {
+                Exception e) {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
