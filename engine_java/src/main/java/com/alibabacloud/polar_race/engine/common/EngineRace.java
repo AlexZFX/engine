@@ -346,13 +346,15 @@ public class EngineRace extends AbstractEngine {
                 num = valueOffsets[i].get();
                 buffer = caches[0].slice();
                 logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
-                for (int j = 0; j < num; j++) {
-                    buffer.position(offs[count + j] << SHIFT_NUM);
+                for (int j = 0; j < num; ++j) {
+                    if (count % 10000 == 0) {
+                        logger.info(" range count = " + count);
+                    }
+                    buffer.position(offs[count] << SHIFT_NUM);
                     buffer.get(valueBytes);
-                    long2bytes(keyBytes, keys[count + j]);
+                    long2bytes(keyBytes, keys[count++]);
                     visitor.visit(keyBytes, valueBytes);
                 }
-                count += num;
                 logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
 //                 只有下一块内存已经准备好之后才继续执行
 //                if (fileReadCount < 511) {
