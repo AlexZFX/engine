@@ -94,7 +94,8 @@ public class EngineRace extends AbstractEngine {
                     executors.execute(() -> {
                         try {
                             caches[1].clear();
-                            fileChannels[tempCount].read(caches[1]);
+                            fileChannels[tempCount].read(caches[1], 0);
+                            caches[1].flip();
 //                            cyclicBarrier.reset();
 //                            for (Thread thread : threadList) {
 //                                LockSupport.unpark(thread);
@@ -108,7 +109,8 @@ public class EngineRace extends AbstractEngine {
                     executors.execute(() -> {
                         try {
                             caches[0].clear();
-                            fileChannels[tempCount].read(caches[0]);
+                            fileChannels[tempCount].read(caches[0], 0);
+                            caches[0].flip();
 //                            cyclicBarrier.reset();
 //                            for (Thread thread : threadList) {
 //                                LockSupport.unpark(thread);
@@ -225,9 +227,10 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 // 对range时的第一块进行初始化
-                fileChannels[0].read(caches[0]);
-                //获取完之后对key进行排序
+                fileChannels[0].read(caches[0], 0);
+                caches[0].flip();
 
+                //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
                 long sortEndTime = System.currentTimeMillis();
