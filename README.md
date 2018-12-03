@@ -1,18 +1,5 @@
-## All you have to do:
+## 第一届PolarDB数据库性能大赛初赛代码
 
-Complete engine_race/engine_race.[h,cc], and execute
+最终初赛排名42名，得分 240.69s，Java代码实现  
 
-```
-make
-```
-to build your own engine
-
-## Example for you
-
-For quick start, we have already implemented a simple
-example engine in engine_example, you can view it and execute
-
-```
-make TARGET_ENGINE=engine_example
-```
-to build this example engine
+详细介绍后续补上。
