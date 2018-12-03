@@ -96,6 +96,7 @@ public class EngineRace extends AbstractEngine {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+                ++fileReadCount;
 //                if (isFirst) {
 //                    sharedBuffer = caches[0];
 //                    executors.execute(() -> {
