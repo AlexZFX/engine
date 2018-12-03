@@ -14,8 +14,11 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class EngineRace extends AbstractEngine {
@@ -337,15 +340,9 @@ public class EngineRace extends AbstractEngine {
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
-                //多次执行没关系
-                synchronized (cyclicBarrier) {
-                    if (cyclicBarrier.isBroken()) {
-                        cyclicBarrier.reset();
-                    }
-                }
                 num = valueOffsets[i].get();
                 buffer = caches[0].slice();
-                logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
+//                logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; ++j) {
                     if (count % 10000 == 0) {
                         logger.info(" range count = " + count);
@@ -353,9 +350,12 @@ public class EngineRace extends AbstractEngine {
                     buffer.position(offs[count] << SHIFT_NUM);
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
+                    if (CURRENT_KEY_NUM == 64000000) {
+                        logger.info("key = " + keys[count - 1] + "  keyBytes = " + Arrays.asList(keyBytes) + "  valueBytes = " + Arrays.toString(valueBytes));
+                    }
                     visitor.visit(keyBytes, valueBytes);
                 }
-                logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
+//                logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
 //                 只有下一块内存已经准备好之后才继续执行
 //                if (fileReadCount < 511) {
 //                    LockSupport.parkNanos(20000000000L);
