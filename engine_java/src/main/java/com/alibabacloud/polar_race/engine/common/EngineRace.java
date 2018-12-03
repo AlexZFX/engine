@@ -78,50 +78,57 @@ public class EngineRace extends AbstractEngine {
 
     private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
 
-    private volatile boolean isFirst = true;
+    //    private volatile boolean isFirst = true;
     //初始设置为 1 跳过第一块
-    private volatile int fileReadCount = 1;
+    private volatile int fileReadCount = 0;
 
-    private static ExecutorService executors = Executors.newSingleThreadExecutor();
+//    private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
         @Override
         public void run() {
             if (fileReadCount < 512) {
                 final int tempCount = fileReadCount;
-                if (isFirst) {
-                    sharedBuffer = caches[0];
-                    executors.execute(() -> {
-                        try {
-                            caches[1].clear();
-                            fileChannels[tempCount].read(caches[1], 0);
-                            caches[1].flip();
-//                            cyclicBarrier.reset();
-//                            for (Thread thread : threadList) {
-//                                LockSupport.unpark(thread);
-//                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    });
-                } else {
-                    sharedBuffer = caches[1];
-                    executors.execute(() -> {
-                        try {
-                            caches[0].clear();
-                            fileChannels[tempCount].read(caches[0], 0);
-                            caches[0].flip();
-//                            cyclicBarrier.reset();
-//                            for (Thread thread : threadList) {
-//                                LockSupport.unpark(thread);
-//                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    });
+                try {
+                    caches[0].clear();
+                    fileChannels[tempCount].read(caches[0], 0);
+                    caches[0].flip();
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-                ++fileReadCount;
-                isFirst = !isFirst;
+//                if (isFirst) {
+//                    sharedBuffer = caches[0];
+//                    executors.execute(() -> {
+//                        try {
+//                            caches[1].clear();
+//                            fileChannels[tempCount].read(caches[1], 0);
+//                            caches[1].flip();
+////                            cyclicBarrier.reset();
+////                            for (Thread thread : threadList) {
+////                                LockSupport.unpark(thread);
+////                            }
+//                        } catch (IOException e) {
+//                            e.printStackTrace();
+//                        }
+//                    });
+//                } else {
+//                    sharedBuffer = caches[1];
+//                    executors.execute(() -> {
+//                        try {
+//                            caches[0].clear();
+//                            fileChannels[tempCount].read(caches[0], 0);
+//                            caches[0].flip();
+////                            cyclicBarrier.reset();
+////                            for (Thread thread : threadList) {
+////                                LockSupport.unpark(thread);
+////                            }
+//                        } catch (IOException e) {
+//                            e.printStackTrace();
+//                        }
+//                    });
+//                }
+//                ++fileReadCount;
+//                isFirst = !isFirst;
             }
         }
     });
@@ -227,8 +234,8 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 // 对range时的第一块进行初始化
-                fileChannels[0].read(caches[0], 0);
-                caches[0].flip();
+//                fileChannels[0].read(caches[0], 0);
+//                caches[0].flip();
 
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
@@ -336,7 +343,7 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 num = valueOffsets[i].get();
-                buffer = sharedBuffer.slice();
+                buffer = caches[0].slice();
                 logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; j++) {
                     buffer.position(offs[count + j] << SHIFT_NUM);
