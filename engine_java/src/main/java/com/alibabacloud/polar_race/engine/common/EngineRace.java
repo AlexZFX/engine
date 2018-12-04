@@ -43,6 +43,9 @@ public class EngineRace extends AbstractEngine {
     //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 4320m
     private static final int VALUE_FILE_SIZE = 520 * 1024 * 1024;
 
+    // 1.5m * 1024 * 1024 字节
+    private static final int KEY_FILE_SIZE = 1572864;
+
 //    private static final long BLOCK_SIZE = 8847360L;
     // BLOCK_SIZE / VALUE_LEN
 //    private static final int MAX_NUM_PER_BLOCK = 2160;
@@ -62,7 +65,7 @@ public class EngineRace extends AbstractEngine {
 
     private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
-//    private static MappedByteBuffer[] keyMappedByteBuffers = new MappedByteBuffer[THREAD_NUM];
+    private static MappedByteBuffer[] keyMappedByteBuffers = new MappedByteBuffer[THREAD_NUM];
 
     //value 文件的fileChannel
     private static FileChannel[] fileChannels = new FileChannel[FILE_COUNT];
@@ -83,7 +86,7 @@ public class EngineRace extends AbstractEngine {
 
     //    private volatile boolean isFirst = true;
     //初始设置为 256 对应 符号位 100000000
-    private volatile int fileReadCount = 256;
+    private volatile int fileReadCount = 255;
 
 //    private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
@@ -91,18 +94,18 @@ public class EngineRace extends AbstractEngine {
         @Override
         public void run() {
             if (fileReadCount < 512) {
+                ++fileReadCount;
+                if (fileReadCount == FILE_COUNT) {
+                    fileReadCount = 0;
+                }
                 final int tempCount = fileReadCount;
                 try {
                     caches[0].clear();
                     int byteNum = fileChannels[tempCount].read(caches[0], 0);
-                    logger.info("从第一个文件中读取到的字节数为 = " + byteNum + "  此时的 valueOff[0],对应的字节数为 = " + (valueOffsets[0].get() << SHIFT_NUM));
+//                    logger.info("从第一个文件中读取到的字节数为 = " + byteNum + "  此时的 valueOff[0],对应的字节数为 = " + (valueOffsets[0].get() << SHIFT_NUM));
                     caches[0].flip();
                 } catch (IOException e) {
                     e.printStackTrace();
-                }
-                ++fileReadCount;
-                if (fileReadCount == FILE_COUNT) {
-                    fileReadCount = 0;
                 }
 //                if (isFirst) {
 //                    sharedBuffer = caches[0];
@@ -142,12 +145,12 @@ public class EngineRace extends AbstractEngine {
     });
 
 
-    private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
-        @Override
-        protected ByteBuffer initialValue() throws Exception {
-            return ByteBuffer.allocate(KEY_AND_OFF_LEN);
-        }
-    };
+//    private static FastThreadLocal<ByteBuffer> localBufferKey = new FastThreadLocal<ByteBuffer>() {
+//        @Override
+//        protected ByteBuffer initialValue() throws Exception {
+//            return ByteBuffer.allocate(KEY_AND_OFF_LEN);
+//        }
+//    };
 
     private static FastThreadLocal<ByteBuffer> localBufferValue = new FastThreadLocal<ByteBuffer>() {
         @Override
@@ -190,12 +193,27 @@ public class EngineRace extends AbstractEngine {
         // file是一个目录时进行接下来的操作
         if (file.isDirectory()) {
             try {
-                //先构建keyFileChannel 和 初始化 map
+                // 初始化 file 文件
+                for (int i = 0; i < FILE_COUNT; i++) {
+                    try {
+                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+                        FileChannel channel = randomAccessFile.getChannel();
+                        fileChannels[i] = channel;
+                        valueOffsets[i] = new AtomicInteger((int) (channel.size() >>> SHIFT_NUM));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+                // 构建keyFileChannel 和 初始化 map
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
                     keyFileChannels[i] = channel;
-                    keyOffsets[i] = new AtomicInteger((int) channel.size());
+                    keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, KEY_FILE_SIZE);
+                    keyOffsets[i] = new AtomicInteger(0);
+                    for (int j = 0; j < 8; j++) {
+                        keyOffsets[i].getAndAdd(valueOffsets[i + THREAD_NUM * j].get() * 12);
+                    }
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 CURRENT_KEY_NUM = 0;
@@ -210,7 +228,7 @@ public class EngineRace extends AbstractEngine {
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
                         CURRENT_KEY_NUM += off / KEY_AND_OFF_LEN;
-                        final MappedByteBuffer buffer = keyFileChannels[i].map(FileChannel.MapMode.READ_ONLY, 0, keyOffsets[i].get());
+                        final MappedByteBuffer buffer = keyMappedByteBuffers[i];
                         new Thread(() -> {
                             int start = 0;
                             int n = temp;
@@ -232,16 +250,6 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
 
-                for (int i = 0; i < FILE_COUNT; i++) {
-                    try {
-                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                        FileChannel channel = randomAccessFile.getChannel();
-                        fileChannels[i] = channel;
-                        valueOffsets[i] = new AtomicInteger((int) (channel.size() >>> SHIFT_NUM));
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
                 // 对range时的第一块进行初始化
 //                fileChannels[0].read(caches[0], 0);
 //                caches[0].flip();
@@ -249,12 +257,12 @@ public class EngineRace extends AbstractEngine {
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
-                if (keys != null) {
-                    byte[] temp = new byte[8];
-                    long2bytes(temp, keys[0]);
-                    TEST_FIRST_VALUE = read(temp);
-                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
-                }
+//                if (keys != null) {
+//                    byte[] temp = new byte[8];
+//                    long2bytes(temp, keys[0]);
+//                    TEST_FIRST_VALUE = read(temp);
+//                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
+//                }
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
@@ -278,7 +286,7 @@ public class EngineRace extends AbstractEngine {
         // value 写入的 offset，每个块内单独计算off
         int off;
         try {
-            // 如果已存在该key，则在key对应的原off位置写入value
+            // 先将 value 写入 valueBuffer
             ByteBuffer buffer = localBufferValue.get();
             buffer.put(value);
             buffer.flip();
@@ -286,21 +294,19 @@ public class EngineRace extends AbstractEngine {
             off = map[keyHash].getOrDefault(numkey, -1);
 
             if (off != -1) {
-                //将value写入buffer
+                // 如果已存在该key，则在key对应的原off位置写入value
                 fileChannels[fileHash].write(buffer, (long) off << SHIFT_NUM);
             } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
-                //将value写入buffer
                 off = valueOffsets[fileHash].getAndIncrement();
                 fileChannels[fileHash].write(buffer, (long) off << SHIFT_NUM);
 
                 // 此时文件中写入的off发生改变
                 map[keyHash].put(numkey, off);
-                ByteBuffer keyBuffer = localBufferKey.get();
+                ByteBuffer keyBuffer = keyMappedByteBuffers[keyHash].slice();
+                keyBuffer.position(keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
                 keyBuffer.putLong(numkey).putInt(off);
-                keyBuffer.flip();
-                keyFileChannels[keyHash].write(keyBuffer, keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
-                keyBuffer.clear();
             }
+
             buffer.clear();
         } catch (
                 Exception e) {
