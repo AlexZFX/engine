@@ -169,7 +169,7 @@ public class EngineRace extends AbstractEngine {
 
     private int CURRENT_KEY_NUM;
 
-//    private byte[] TEST_FIRST_VALUE;
+    private byte[] TEST_FIRST_VALUE;
 
     @Override
     public void open(String path) throws EngineException {
@@ -246,12 +246,12 @@ public class EngineRace extends AbstractEngine {
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
-//                if (keys != null) {
-//                    byte[] temp = new byte[8];
-//                    long2bytes(temp, keys[0]);
-//                    TEST_FIRST_VALUE = read(temp);
-//                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
-//                }
+                if (keys != null) {
+                    byte[] temp = new byte[8];
+                    long2bytes(temp, keys[0]);
+                    TEST_FIRST_VALUE = read(temp);
+                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
+                }
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
@@ -340,7 +340,6 @@ public class EngineRace extends AbstractEngine {
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-        ByteBuffer buffer;
         logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         try {
             // 第一次初始化sharedBuffer
@@ -351,7 +350,7 @@ public class EngineRace extends AbstractEngine {
                 num = valueOffsets[i].get();
 //                logger.info(i + "cache[0] buffer的可读 字节数为  " + caches[0].remaining()
 //                        + "\n  position = " + caches[0].position() + "  limit = " + caches[0].position());
-                buffer = caches[0].asReadOnlyBuffer();
+                ByteBuffer buffer = caches[0].slice();
 //                logger.info(i + " buffer num: " + num + "  buffer的可读 字节数为  " + buffer.remaining()
 //                        + "\n  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; ++j) {
@@ -371,6 +370,10 @@ public class EngineRace extends AbstractEngine {
 //                    if (k == VALUE_LEN) {
 //                        logger.error("first value is equal");
 //                    }
+                    if (count == 1) {
+                        logger.error("first value = " + Arrays.toString(TEST_FIRST_VALUE));
+                        logger.error("value Bytes = " + Arrays.toString(valueBytes));
+                    }
                     visitor.visit(keyBytes, valueBytes);
                 }
 //                logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
