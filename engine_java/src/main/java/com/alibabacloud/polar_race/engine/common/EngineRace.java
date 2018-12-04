@@ -169,7 +169,7 @@ public class EngineRace extends AbstractEngine {
 
     private int CURRENT_KEY_NUM;
 
-    private byte[] TEST_FIRST_VALUE = new byte[VALUE_LEN];
+    private byte[] TEST_FIRST_VALUE;
 
     @Override
     public void open(String path) throws EngineException {
@@ -203,7 +203,7 @@ public class EngineRace extends AbstractEngine {
                             offs = new int[KEY_NUM];
                         }
                         final long off = keyOffsets[i].get();
-                        logger.info("第" + i + "个key文件的大小为 ：" + (off / 1024) + "kB");
+                        logger.info("第" + i + "个key文件的大小为 ：" + off + "B");
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
                         CURRENT_KEY_NUM += off / KEY_AND_OFF_LEN;
@@ -361,9 +361,9 @@ public class EngineRace extends AbstractEngine {
                     if (CURRENT_KEY_NUM == 64000000) {
                         logger.info("key = " + keys[count - 1] + "  keyBytes = " + Arrays.toString(keyBytes) + "  valueBytes = " + Arrays.toString(valueBytes));
                     }
-                    int k;
+                    int k = 0;
                     for (k = 0; k < VALUE_LEN; k++) {
-                        if (TEST_FIRST_VALUE[k] != valueBytes[i]) {
+                        if (TEST_FIRST_VALUE[k] != valueBytes[k]) {
                             logger.error("first value not equal ");
                             break;
                         }
