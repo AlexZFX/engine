@@ -351,7 +351,7 @@ public class EngineRace extends AbstractEngine {
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
                     if (CURRENT_KEY_NUM == 64000000) {
-                        logger.info("key = " + keys[count - 1] + "  keyBytes = " + Arrays.asList(keyBytes) + "  valueBytes = " + Arrays.toString(valueBytes));
+                        logger.info("key = " + keys[count - 1] + "  keyBytes = " + Arrays.toString(keyBytes) + "  valueBytes = " + Arrays.toString(valueBytes));
                     }
                     visitor.visit(keyBytes, valueBytes);
                 }
