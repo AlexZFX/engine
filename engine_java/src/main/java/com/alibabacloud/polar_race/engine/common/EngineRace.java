@@ -350,7 +350,7 @@ public class EngineRace extends AbstractEngine {
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
-                num = valueOffsets[i].get();
+                num = valueOffsets[fileReadCount].get();
 //                logger.info(i + "cache[0] buffer的可读 字节数为  " + caches[0].remaining()
 //                        + "\n  position = " + caches[0].position() + "  limit = " + caches[0].position());
                 ByteBuffer buffer = caches[0].slice();
