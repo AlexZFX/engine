@@ -195,16 +195,13 @@ public class EngineRace extends AbstractEngine {
             try {
                 // 初始化 file 文件
                 for (int i = 0; i < FILE_COUNT; i++) {
-                    try {
-                        randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
-                        FileChannel channel = randomAccessFile.getChannel();
-                        fileChannels[i] = channel;
-                        valueOffsets[i] = new AtomicInteger((int) (channel.size() >>> SHIFT_NUM));
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    randomAccessFile = new RandomAccessFile(path + File.separator + i + ".data", "rw");
+                    FileChannel channel = randomAccessFile.getChannel();
+                    fileChannels[i] = channel;
+                    valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
                 }
-                // 构建keyFileChannel 和 初始化 map
+
+                // 构建keyFileChannel 和 初始化 mmap
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
@@ -212,9 +209,10 @@ public class EngineRace extends AbstractEngine {
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, KEY_FILE_SIZE);
                     keyOffsets[i] = new AtomicInteger(0);
                     for (int j = 0; j < 8; j++) {
-                        keyOffsets[i].getAndAdd(valueOffsets[i + j].get() * 12);
+                        keyOffsets[i].getAndAdd(valueOffsets[i + j].get() * KEY_AND_OFF_LEN);
                     }
                 }
+
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 CURRENT_KEY_NUM = 0;
                 for (int i = 0; i < THREAD_NUM; i++) {
@@ -244,6 +242,7 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
                 countDownLatch.await();
+
                 if (keys == null) {
                     for (int i = 0; i < THREAD_NUM; i++) {
                         map[i] = new LongIntHashMap(1024000, 0.99);
@@ -308,8 +307,7 @@ public class EngineRace extends AbstractEngine {
             }
 
             buffer.clear();
-        } catch (
-                Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
         }
@@ -408,7 +406,14 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void close() {
-        logger.info("--------close--------");
+        try {
+            for (int i = 0; i < FILE_COUNT; i++) {
+                logger.error("value file " + i + " size  = " + fileChannels[i].size());
+            }
+            logger.info("--------close--------");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     //取前6位，分为64个文件
