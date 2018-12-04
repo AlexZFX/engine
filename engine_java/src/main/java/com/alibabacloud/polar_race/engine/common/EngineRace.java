@@ -212,7 +212,7 @@ public class EngineRace extends AbstractEngine {
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, KEY_FILE_SIZE);
                     keyOffsets[i] = new AtomicInteger(0);
                     for (int j = 0; j < 8; j++) {
-                        keyOffsets[i].getAndAdd(valueOffsets[i + THREAD_NUM * j].get() * 12);
+                        keyOffsets[i].getAndAdd(valueOffsets[i + j].get() * 12);
                     }
                 }
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
