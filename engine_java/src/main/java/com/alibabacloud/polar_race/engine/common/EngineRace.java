@@ -43,8 +43,8 @@ public class EngineRace extends AbstractEngine {
     //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 4320m
     private static final int VALUE_FILE_SIZE = 520 * 1024 * 1024;
 
-    // 1.5m * 1024 * 1024 字节
-    private static final int KEY_FILE_SIZE = 1572864;
+    // 12m * 1024 * 1024 字节
+    private static final int KEY_FILE_SIZE = 12582912;
 
 //    private static final long BLOCK_SIZE = 8847360L;
     // BLOCK_SIZE / VALUE_LEN
