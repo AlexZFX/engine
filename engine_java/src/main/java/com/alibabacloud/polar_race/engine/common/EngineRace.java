@@ -199,6 +199,7 @@ public class EngineRace extends AbstractEngine {
                     FileChannel channel = randomAccessFile.getChannel();
                     fileChannels[i] = channel;
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
+                    logger.error("value file " + i + " off  = " + valueOffsets[i].get());
                 }
 
                 // 构建keyFileChannel 和 初始化 mmap
@@ -211,6 +212,7 @@ public class EngineRace extends AbstractEngine {
                     for (int j = 0; j < 8; j++) {
                         keyOffsets[i].getAndAdd(valueOffsets[i + j].get() * KEY_AND_OFF_LEN);
                     }
+                    logger.error("key file " + i + " off  = " + keyOffsets[i].get());
                 }
 
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
