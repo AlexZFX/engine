@@ -94,7 +94,8 @@ public class EngineRace extends AbstractEngine {
                 final int tempCount = fileReadCount;
                 try {
                     caches[0].clear();
-                    fileChannels[tempCount].read(caches[0], 0);
+                    int byteNum = fileChannels[tempCount].read(caches[0], 0);
+                    logger.info("从第一个文件中读取到的字节数为 = " + byteNum + "  此时的 valueOff[0],对应的字节数为 = " + (valueOffsets[0].get() << SHIFT_NUM));
                     caches[0].flip();
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -244,6 +245,9 @@ public class EngineRace extends AbstractEngine {
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
+                for (int i = 0; i < 200; i++) {
+                    logger.error("排序后的 key[" + i + "]=" + keys[i] + "--- off=" + offs[i]);
+                }
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
@@ -341,8 +345,11 @@ public class EngineRace extends AbstractEngine {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
                 num = valueOffsets[i].get();
+                logger.info(i + "cache[0] buffer的可读 字节数为  " + caches[0].remaining()
+                        + "\n  position = " + caches[0].position() + "  limit = " + caches[0].position());
                 buffer = caches[0].slice();
-//                logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
+                logger.info(i + " buffer num: " + num + "  buffer的可读 字节数为  " + buffer.remaining()
+                        + "\n  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; ++j) {
                     if (count % 100000 == 0) {
                         logger.info(" range count = " + count);
