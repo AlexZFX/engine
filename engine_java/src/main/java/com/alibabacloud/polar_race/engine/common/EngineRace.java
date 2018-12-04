@@ -169,6 +169,7 @@ public class EngineRace extends AbstractEngine {
 
     private int CURRENT_KEY_NUM;
 
+    private byte[] TEST_FIRST_VALUE = new byte[VALUE_LEN];
 
     @Override
     public void open(String path) throws EngineException {
@@ -245,8 +246,14 @@ public class EngineRace extends AbstractEngine {
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
-                for (int i = 0; i < 200; i++) {
-                    logger.error("排序后的 key[" + i + "]=" + keys[i] + "--- off=" + offs[i]);
+                if (keys != null) {
+                    for (int i = 0; i < 200; i++) {
+                        logger.error("排序后的 key[" + i + "]=" + keys[i] + "--- off=" + offs[i]);
+                    }
+                    byte[] temp = new byte[8];
+                    long2bytes(temp, keys[0]);
+                    TEST_FIRST_VALUE = read(temp);
+                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
                 }
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
@@ -359,6 +366,16 @@ public class EngineRace extends AbstractEngine {
                     long2bytes(keyBytes, keys[count++]);
                     if (CURRENT_KEY_NUM == 64000000) {
                         logger.info("key = " + keys[count - 1] + "  keyBytes = " + Arrays.toString(keyBytes) + "  valueBytes = " + Arrays.toString(valueBytes));
+                    }
+                    int k;
+                    for (k = 0; k < VALUE_LEN; k++) {
+                        if (TEST_FIRST_VALUE[k] != valueBytes[i]) {
+                            logger.error("first value not equal ");
+                            break;
+                        }
+                    }
+                    if (k == VALUE_LEN) {
+                        logger.error("first value is equal");
                     }
                     visitor.visit(keyBytes, valueBytes);
                 }
