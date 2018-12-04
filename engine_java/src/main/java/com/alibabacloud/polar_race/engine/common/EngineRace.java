@@ -72,7 +72,7 @@ public class EngineRace extends AbstractEngine {
     // 一大块共享缓存
     private volatile ByteBuffer sharedBuffer;
 
-    private static ByteBuffer[] caches = new ByteBuffer[2];
+    private static volatile ByteBuffer[] caches = new ByteBuffer[2];
 
     static {
         caches[0] = ByteBuffer.allocateDirect(VALUE_FILE_SIZE);
@@ -344,7 +344,7 @@ public class EngineRace extends AbstractEngine {
                 buffer = caches[0].slice();
 //                logger.info(i + " buffer num: " + num + "  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; ++j) {
-                    if (count % 10000 == 0) {
+                    if (count % 100000 == 0) {
                         logger.info(" range count = " + count);
                     }
                     buffer.position(offs[count] << SHIFT_NUM);
