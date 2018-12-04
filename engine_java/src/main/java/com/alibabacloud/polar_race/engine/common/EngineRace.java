@@ -247,9 +247,6 @@ public class EngineRace extends AbstractEngine {
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
                 if (keys != null) {
-                    for (int i = 0; i < 200; i++) {
-                        logger.error("排序后的 key[" + i + "]=" + keys[i] + "--- off=" + offs[i]);
-                    }
                     byte[] temp = new byte[8];
                     long2bytes(temp, keys[0]);
                     TEST_FIRST_VALUE = read(temp);
@@ -352,15 +349,12 @@ public class EngineRace extends AbstractEngine {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
                 num = valueOffsets[i].get();
-                logger.info(i + "cache[0] buffer的可读 字节数为  " + caches[0].remaining()
-                        + "\n  position = " + caches[0].position() + "  limit = " + caches[0].position());
+//                logger.info(i + "cache[0] buffer的可读 字节数为  " + caches[0].remaining()
+//                        + "\n  position = " + caches[0].position() + "  limit = " + caches[0].position());
                 buffer = caches[0].slice();
-                logger.info(i + " buffer num: " + num + "  buffer的可读 字节数为  " + buffer.remaining()
-                        + "\n  fileReadCount = " + fileReadCount);
+//                logger.info(i + " buffer num: " + num + "  buffer的可读 字节数为  " + buffer.remaining()
+//                        + "\n  fileReadCount = " + fileReadCount);
                 for (int j = 0; j < num; ++j) {
-                    if (count % 100000 == 0) {
-                        logger.info(" range count = " + count);
-                    }
                     buffer.position(offs[count] << SHIFT_NUM);
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
