@@ -82,8 +82,8 @@ public class EngineRace extends AbstractEngine {
     private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
 
     //    private volatile boolean isFirst = true;
-    //初始设置为 1 跳过第一块
-    private volatile int fileReadCount = 0;
+    //初始设置为 256 对应 符号位 100000000
+    private volatile int fileReadCount = 256;
 
 //    private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
@@ -101,6 +101,9 @@ public class EngineRace extends AbstractEngine {
                     e.printStackTrace();
                 }
                 ++fileReadCount;
+                if (fileReadCount == FILE_COUNT) {
+                    fileReadCount = 0;
+                }
 //                if (isFirst) {
 //                    sharedBuffer = caches[0];
 //                    executors.execute(() -> {
