@@ -16,9 +16,7 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class EngineRace extends AbstractEngine {
@@ -84,63 +82,57 @@ public class EngineRace extends AbstractEngine {
 
     private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
 
-    //    private volatile boolean isFirst = true;
+    private boolean isFirst = true;
     //初始设置为 256 对应 符号位 100000000
-    private volatile int fileReadCount = 255;
+    private int fileReadCount = 256;
 
-//    private static ExecutorService executors = Executors.newSingleThreadExecutor();
+    private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
         @Override
         public void run() {
-            if (fileReadCount < 512) {
-                ++fileReadCount;
-                if (fileReadCount == FILE_COUNT) {
-                    fileReadCount = 0;
-                }
-                final int tempCount = fileReadCount;
-                try {
-                    caches[0].clear();
-                    int byteNum = fileChannels[tempCount].read(caches[0], 0);
-//                    logger.info("从第一个文件中读取到的字节数为 = " + byteNum + "  此时的 valueOff[0],对应的字节数为 = " + (valueOffsets[0].get() << SHIFT_NUM));
-                    caches[0].flip();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-//                if (isFirst) {
-//                    sharedBuffer = caches[0];
-//                    executors.execute(() -> {
-//                        try {
-//                            caches[1].clear();
-//                            fileChannels[tempCount].read(caches[1], 0);
-//                            caches[1].flip();
-////                            cyclicBarrier.reset();
-////                            for (Thread thread : threadList) {
-////                                LockSupport.unpark(thread);
-////                            }
-//                        } catch (IOException e) {
-//                            e.printStackTrace();
-//                        }
-//                    });
-//                } else {
-//                    sharedBuffer = caches[1];
-//                    executors.execute(() -> {
-//                        try {
-//                            caches[0].clear();
-//                            fileChannels[tempCount].read(caches[0], 0);
-//                            caches[0].flip();
-////                            cyclicBarrier.reset();
-////                            for (Thread thread : threadList) {
-////                                LockSupport.unpark(thread);
-////                            }
-//                        } catch (IOException e) {
-//                            e.printStackTrace();
-//                        }
-//                    });
-//                }
-//                ++fileReadCount;
-//                isFirst = !isFirst;
+            ++fileReadCount;
+            if (fileReadCount == FILE_COUNT) {
+                fileReadCount = 0;
             }
+            final int tempCount = fileReadCount;
+//                try {
+//                    caches[0].clear();
+//                    fileChannels[tempCount].read(caches[0], 0);
+//                    caches[0].flip();
+//                } catch (IOException e) {
+//                    e.printStackTrace();
+//                }
+            if (isFirst) {
+                sharedBuffer = caches[0];
+                executors.execute(() -> {
+                    try {
+                        caches[1].clear();
+                        fileChannels[tempCount].read(caches[1], 0);
+                        caches[1].flip();
+//                            for (Thread thread : threadList) {
+//                                LockSupport.unpark(thread);
+//                            }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+            } else {
+                sharedBuffer = caches[1];
+                executors.execute(() -> {
+                    try {
+                        caches[0].clear();
+                        fileChannels[tempCount].read(caches[0], 0);
+                        caches[0].flip();
+//                            for (Thread thread : threadList) {
+//                                LockSupport.unpark(thread);
+//                            }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
+            isFirst = !isFirst;
         }
     });
 
@@ -251,26 +243,16 @@ public class EngineRace extends AbstractEngine {
                     }
                 }
 
-                // 对range时的第一块进行初始化
-//                fileChannels[0].read(caches[0], 0);
-//                caches[0].flip();
+//                 对range时的第一块进行初始化
+                fileChannels[fileReadCount].read(caches[0], 0);
+                caches[0].flip();
 
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
-                if (keys != null) {
-                    byte[] temp = new byte[8];
-                    long2bytes(temp, keys[0]);
-                    TEST_FIRST_VALUE = read(temp);
-                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
-                }
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
-//                CURRENT_KEY_NUM = handleDuplicate(CURRENT_KEY_NUM);
-//                logger.info("handleDuplicate 耗时" + (System.currentTimeMillis() - sortEndTime) + "ms");
-//                logger.info("CURRENT_KEY_NUM is " + CURRENT_KEY_NUM + " after handle duplicate");
-                //创建 FILE_COUNT个FileChannel 分块写入
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -289,6 +271,7 @@ public class EngineRace extends AbstractEngine {
         try {
             // 先将 value 写入 valueBuffer
             ByteBuffer buffer = localBufferValue.get();
+            buffer.clear();
             buffer.put(value);
             buffer.flip();
 
@@ -296,19 +279,18 @@ public class EngineRace extends AbstractEngine {
 
             if (off != -1) {
                 // 如果已存在该key，则在key对应的原off位置写入value
-                fileChannels[fileHash].write(buffer, (long) off << SHIFT_NUM);
+                fileChannels[fileHash].write(buffer, off << SHIFT_NUM);
             } else { // 不存在该key时，先判断是否过块，过了则写入temp文件，修改off
                 off = valueOffsets[fileHash].getAndIncrement();
-                fileChannels[fileHash].write(buffer, (long) off << SHIFT_NUM);
 
-                // 此时文件中写入的off发生改变
+                // 写入key + off
                 map[keyHash].put(numkey, off);
                 ByteBuffer keyBuffer = keyMappedByteBuffers[keyHash].slice();
                 keyBuffer.position(keyOffsets[keyHash].getAndAdd(KEY_AND_OFF_LEN));
                 keyBuffer.putLong(numkey).putInt(off);
+                // 写入value
+                fileChannels[fileHash].write(buffer, off << SHIFT_NUM);
             }
-
-            buffer.clear();
         } catch (Exception e) {
             e.printStackTrace();
             throw new EngineException(RetCodeEnum.IO_ERROR, "写入数据出错");
@@ -357,39 +339,13 @@ public class EngineRace extends AbstractEngine {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
                 num = valueOffsets[fileReadCount].get();
-//                logger.info(i + "cache[0] buffer的可读 字节数为  " + caches[0].remaining()
-//                        + "\n  position = " + caches[0].position() + "  limit = " + caches[0].position());
-                ByteBuffer buffer = caches[0].slice();
-//                logger.info(i + " buffer num: " + num + "  buffer的可读 字节数为  " + buffer.remaining()
-//                        + "\n  fileReadCount = " + fileReadCount);
+                ByteBuffer buffer = sharedBuffer.slice();
                 for (int j = 0; j < num; ++j) {
                     buffer.position(offs[count] << SHIFT_NUM);
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
-//                    if (CURRENT_KEY_NUM == 64000000) {
-//                        logger.info("key = " + keys[count - 1] + "  keyBytes = " + Arrays.toString(keyBytes) + "  valueBytes = " + Arrays.toString(valueBytes));
-//                    }
-//                    int k = 0;
-//                    for (k = 0; k < VALUE_LEN; k++) {
-//                        if (TEST_FIRST_VALUE[k] != valueBytes[k]) {
-//                            logger.error("first value not equal ");
-//                            break;
-//                        }
-//                    }
-//                    if (k == VALUE_LEN) {
-//                        logger.error("first value is equal");
-//                    }
-//                    if (count == 1) {
-//                        logger.error("first value = " + Arrays.toString(TEST_FIRST_VALUE));
-//                        logger.error("value Bytes = " + Arrays.toString(valueBytes));
-//                    }
                     visitor.visit(keyBytes, valueBytes);
                 }
-//                logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
-//                 只有下一块内存已经准备好之后才继续执行
-//                if (fileReadCount < 511) {
-//                    LockSupport.parkNanos(20000000000L);
-//                }
             }
 
         } catch (Exception e) {
@@ -409,25 +365,15 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void close() {
         try {
-//            for (int i = 0; i < FILE_COUNT; i++) {
-//                logger.error("value file " + i + " size  = " + fileChannels[i].size());
-//            }
             logger.info("--------close--------");
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    //取前6位，分为64个文件
-//    private static int keyFileHash(long key) {
-//        return (int) (key >>> 58);
-////        return (int) (key & HASH_VALUE);
-//    }
-
     //    取前9位，分为512个文件
     private static int valueFileHash(long key) {
         return (int) (key >>> 55);
-//        return (int) (key & HASH_VALUE);
     }
 
     private int getKey(long numkey) {
