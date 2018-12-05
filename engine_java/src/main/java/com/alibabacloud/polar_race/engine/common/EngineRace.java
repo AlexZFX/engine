@@ -14,10 +14,10 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 public class EngineRace extends AbstractEngine {
 
@@ -88,6 +88,8 @@ public class EngineRace extends AbstractEngine {
 
     private volatile int offReadCount = 255;
 
+    private volatile boolean lock = true;
+
     private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
@@ -111,14 +113,16 @@ public class EngineRace extends AbstractEngine {
 //                }
             if (isFirst) {
                 sharedBuffer = caches[0];
+                lock = true;
                 executors.execute(() -> {
                     try {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
                         caches[1].flip();
-//                            for (Thread thread : threadList) {
-//                                LockSupport.unpark(thread);
-//                            }
+                        lock = false;
+//                        for (Thread thread : threadList) {
+//                            LockSupport.unpark(thread);
+//                        }
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -130,9 +134,10 @@ public class EngineRace extends AbstractEngine {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
                         caches[0].flip();
-//                            for (Thread thread : threadList) {
-//                                LockSupport.unpark(thread);
-//                            }
+//                        for (Thread thread : threadList) {
+//                            LockSupport.unpark(thread);
+//                        }
+                        lock = false;
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -173,7 +178,6 @@ public class EngineRace extends AbstractEngine {
 
     private int CURRENT_KEY_NUM;
 
-    private byte[] TEST_FIRST_VALUE;
 
     @Override
     public void open(String path) throws EngineException {
@@ -337,10 +341,10 @@ public class EngineRace extends AbstractEngine {
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
+//        logger.info("in range CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
         try {
             // 第一次初始化sharedBuffer
-
+            LockSupport.unpark(Thread.currentThread());
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
@@ -351,6 +355,8 @@ public class EngineRace extends AbstractEngine {
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
                     visitor.visit(keyBytes, valueBytes);
+                }
+                while (lock) {
                 }
             }
 
