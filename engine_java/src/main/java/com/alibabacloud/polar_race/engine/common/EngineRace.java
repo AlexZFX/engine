@@ -199,7 +199,7 @@ public class EngineRace extends AbstractEngine {
                     FileChannel channel = randomAccessFile.getChannel();
                     fileChannels[i] = channel;
                     valueOffsets[i] = new AtomicInteger((int) (randomAccessFile.length() >>> SHIFT_NUM));
-                    logger.error("value file " + i + " off  = " + valueOffsets[i].get());
+//                    logger.error("value file " + i + " off  = " + valueOffsets[i].get());
                 }
 
                 // 构建keyFileChannel 和 初始化 mmap
@@ -210,9 +210,9 @@ public class EngineRace extends AbstractEngine {
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, KEY_FILE_SIZE);
                     keyOffsets[i] = new AtomicInteger(0);
                     for (int j = 0; j < 8; j++) {
-                        keyOffsets[i].getAndAdd(valueOffsets[i + j].get() * KEY_AND_OFF_LEN);
+                        keyOffsets[i].getAndAdd(valueOffsets[(i << 3) + j].get() * KEY_AND_OFF_LEN);
                     }
-                    logger.error("key file " + i + " off  = " + keyOffsets[i].get());
+//                    logger.error("key file " + i + " off  = " + keyOffsets[i].get());
                 }
 
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
@@ -224,7 +224,7 @@ public class EngineRace extends AbstractEngine {
                             offs = new int[KEY_NUM];
                         }
                         final long off = keyOffsets[i].get();
-                        logger.info("第" + i + "个key文件的大小为 ：" + off + "B");
+//                        logger.info("第" + i + "个key文件的大小为 ：" + off + "B");
                         // 第i个文件写入 keys 的起始位置
                         final int temp = CURRENT_KEY_NUM;
                         CURRENT_KEY_NUM += off / KEY_AND_OFF_LEN;
@@ -258,12 +258,12 @@ public class EngineRace extends AbstractEngine {
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
                 heapSort(CURRENT_KEY_NUM);
-//                if (keys != null) {
-//                    byte[] temp = new byte[8];
-//                    long2bytes(temp, keys[0]);
-//                    TEST_FIRST_VALUE = read(temp);
-//                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
-//                }
+                if (keys != null) {
+                    byte[] temp = new byte[8];
+                    long2bytes(temp, keys[0]);
+                    TEST_FIRST_VALUE = read(temp);
+                    logger.error("keys[0] = " + keys[0] + "\n offs[0] =" + offs[0] + "\n value = " + Arrays.toString(TEST_FIRST_VALUE));
+                }
                 long sortEndTime = System.currentTimeMillis();
                 logger.info("sort 耗时 " + (sortEndTime - sortStartTime) + "ms");
                 logger.info("CURRENT_KEY_NUM = " + CURRENT_KEY_NUM);
@@ -379,10 +379,10 @@ public class EngineRace extends AbstractEngine {
 //                    if (k == VALUE_LEN) {
 //                        logger.error("first value is equal");
 //                    }
-                    if (count == 1) {
-                        logger.error("first value = " + Arrays.toString(TEST_FIRST_VALUE));
-                        logger.error("value Bytes = " + Arrays.toString(valueBytes));
-                    }
+//                    if (count == 1) {
+//                        logger.error("first value = " + Arrays.toString(TEST_FIRST_VALUE));
+//                        logger.error("value Bytes = " + Arrays.toString(valueBytes));
+//                    }
                     visitor.visit(keyBytes, valueBytes);
                 }
 //                logger.info(i + " read end count: " + count + "  fileReadCount = " + fileReadCount);
@@ -409,9 +409,9 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void close() {
         try {
-            for (int i = 0; i < FILE_COUNT; i++) {
-                logger.error("value file " + i + " size  = " + fileChannels[i].size());
-            }
+//            for (int i = 0; i < FILE_COUNT; i++) {
+//                logger.error("value file " + i + " size  = " + fileChannels[i].size());
+//            }
             logger.info("--------close--------");
         } catch (Exception e) {
             e.printStackTrace();
