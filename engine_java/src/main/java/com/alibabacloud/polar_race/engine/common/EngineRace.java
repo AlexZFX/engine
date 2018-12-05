@@ -18,7 +18,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 
 public class EngineRace extends AbstractEngine {
 
@@ -83,9 +82,11 @@ public class EngineRace extends AbstractEngine {
 
     private static final List<Thread> threadList = new ArrayList<>(THREAD_NUM);
 
-    private volatile boolean isFirst = true;
+    private boolean isFirst = true;
     //初始设置为 256 对应 符号位 100000000
     private volatile int fileReadCount = 256;
+
+    private volatile int offReadCount = 255;
 
     private static ExecutorService executors = Executors.newSingleThreadExecutor();
 
@@ -96,9 +97,11 @@ public class EngineRace extends AbstractEngine {
             if (fileReadCount == FILE_COUNT) {
                 fileReadCount = 0;
             }
-            // 等于256时，说明已经遍历结束
-            if (fileReadCount != 256) {
-                final int tempCount = fileReadCount;
+            ++offReadCount;
+            if (offReadCount == FILE_COUNT) {
+                offReadCount = 0;
+            }
+            final int tempCount = fileReadCount;
 //                try {
 //                    caches[0].clear();
 //                    fileChannels[tempCount].read(caches[0], 0);
@@ -106,37 +109,36 @@ public class EngineRace extends AbstractEngine {
 //                } catch (IOException e) {
 //                    e.printStackTrace();
 //                }
-                if (isFirst) {
-                    sharedBuffer = caches[0];
-                    executors.execute(() -> {
-                        try {
-                            caches[1].clear();
-                            fileChannels[tempCount].read(caches[1], 0);
-                            caches[1].flip();
-                            for (Thread thread : threadList) {
-                                LockSupport.unpark(thread);
-                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    });
-                } else {
-                    sharedBuffer = caches[1];
-                    executors.execute(() -> {
-                        try {
-                            caches[0].clear();
-                            fileChannels[tempCount].read(caches[0], 0);
-                            caches[0].flip();
-                            for (Thread thread : threadList) {
-                                LockSupport.unpark(thread);
-                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    });
-                }
-                isFirst = !isFirst;
+            if (isFirst) {
+                sharedBuffer = caches[0];
+                executors.execute(() -> {
+                    try {
+                        caches[1].clear();
+                        fileChannels[tempCount].read(caches[1], 0);
+                        caches[1].flip();
+//                            for (Thread thread : threadList) {
+//                                LockSupport.unpark(thread);
+//                            }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+            } else {
+                sharedBuffer = caches[1];
+                executors.execute(() -> {
+                    try {
+                        caches[0].clear();
+                        fileChannels[tempCount].read(caches[0], 0);
+                        caches[0].flip();
+//                            for (Thread thread : threadList) {
+//                                LockSupport.unpark(thread);
+//                            }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
             }
+            isFirst = !isFirst;
         }
     });
 
@@ -171,7 +173,7 @@ public class EngineRace extends AbstractEngine {
 
     private int CURRENT_KEY_NUM;
 
-//    private byte[] TEST_FIRST_VALUE;
+    private byte[] TEST_FIRST_VALUE;
 
     @Override
     public void open(String path) throws EngineException {
@@ -314,7 +316,7 @@ public class EngineRace extends AbstractEngine {
         byte[] bytes = localValueBytes.get();
         try {
             ByteBuffer buffer = localBufferValue.get();
-            // 如果不在 块中，则去temp文件中读取
+            //如果不在 块中，则去temp文件中读取
             fileChannels[fileHash].read(buffer, (long) off << SHIFT_NUM);
             buffer.flip();
             buffer.get(bytes, 0, VALUE_LEN);
@@ -339,20 +341,16 @@ public class EngineRace extends AbstractEngine {
         try {
             // 第一次初始化sharedBuffer
 
-            for (int i = 0; i < FILE_COUNT; ++i) {
+            for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(20, TimeUnit.SECONDS);
-                num = valueOffsets[fileReadCount].get();
+                num = valueOffsets[offReadCount].get();
                 ByteBuffer buffer = sharedBuffer.slice();
                 for (int j = 0; j < num; ++j) {
                     buffer.position(offs[count] << SHIFT_NUM);
                     buffer.get(valueBytes);
                     long2bytes(keyBytes, keys[count++]);
                     visitor.visit(keyBytes, valueBytes);
-                }
-                // 等于 511时，无需 park 直接结束
-                if (i != FILE_COUNT - 1) {
-                    LockSupport.park();
                 }
             }
 
