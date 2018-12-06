@@ -95,6 +95,7 @@ public class EngineRace extends AbstractEngine {
     private final CyclicBarrier cyclicBarrier = new CyclicBarrier(THREAD_NUM, new Runnable() {
         @Override
         public void run() {
+            lock = true;
             ++fileReadCount;
             if (fileReadCount == FILE_COUNT) {
                 fileReadCount = 0;
@@ -113,16 +114,12 @@ public class EngineRace extends AbstractEngine {
 //                }
             if (isFirst) {
                 sharedBuffer = caches[0];
-                lock = true;
                 executors.execute(() -> {
                     try {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
                         caches[1].flip();
                         lock = false;
-//                        for (Thread thread : threadList) {
-//                            LockSupport.unpark(thread);
-//                        }
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -134,9 +131,6 @@ public class EngineRace extends AbstractEngine {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
                         caches[0].flip();
-//                        for (Thread thread : threadList) {
-//                            LockSupport.unpark(thread);
-//                        }
                         lock = false;
                     } catch (IOException e) {
                         e.printStackTrace();
