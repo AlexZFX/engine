@@ -212,6 +212,7 @@ public class EngineRace extends AbstractEngine {
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 CURRENT_KEY_NUM = 0;
                 for (int i = 0; i < THREAD_NUM; i++) {
+                    // 只要进入判断则说明是在读取过程中，存在相同key
                     if (!(keyOffsets[i].get() == 0)) {
                         if (keys == null) {
                             keys = new long[KEY_NUM];
@@ -250,10 +251,11 @@ public class EngineRace extends AbstractEngine {
                         map[i] = new LongIntHashMap(1024000, 0.99);
                     }
                 }
-
-//                 对range时的第一块进行初始化
-                fileChannels[fileReadCount].read(caches[0], 0);
-                caches[0].flip();
+//                对range时的第一块进行初始化
+                if (caches != null) {
+                    fileChannels[fileReadCount].read(caches[0], 0);
+                    caches[0].flip();
+                }
 
                 //获取完之后对key进行排序
                 long sortStartTime = System.currentTimeMillis();
