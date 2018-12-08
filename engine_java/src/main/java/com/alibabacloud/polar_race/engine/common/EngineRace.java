@@ -89,25 +89,27 @@ public class EngineRace extends AbstractEngine {
             }
             final int tempCount = fileReadCount;
             try {
-                sharedBuffer = list.poll(20, TimeUnit.SECONDS);
+                sharedBuffer = list.poll(1, TimeUnit.SECONDS);
                 logger.error("poll one buffer, fileReadCount = " + fileReadCount + "  offReadCount=" + offReadCount);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
             if (isFirst) {
-                executors.execute(() -> {
+//                executors.execute(() -> {
+                new Thread(() -> {
                     try {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
                         caches[1].flip();
-                        list.offer(caches[1], 20, TimeUnit.SECONDS);
+                        list.offer(caches[1], 1, TimeUnit.SECONDS);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                });
+                }).start();
             } else {
                 sharedBuffer = caches[1];
-                executors.execute(() -> {
+//                executors.execute(
+                new Thread(() -> {
                     try {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
@@ -116,7 +118,7 @@ public class EngineRace extends AbstractEngine {
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                });
+                }).start();
             }
             isFirst = !isFirst;
         }
@@ -325,7 +327,7 @@ public class EngineRace extends AbstractEngine {
             // 第一次初始化sharedBuffer
             for (int i = 0; i < FILE_COUNT; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
-                cyclicBarrier.await(20, TimeUnit.SECONDS);
+                cyclicBarrier.await(1, TimeUnit.SECONDS);
                 num = valueOffsets[offReadCount].get();
                 ByteBuffer buffer = sharedBuffer.slice();
                 for (int j = 0; j < num; ++j) {
