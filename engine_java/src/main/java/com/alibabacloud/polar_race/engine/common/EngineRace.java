@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -96,8 +97,7 @@ public class EngineRace extends AbstractEngine {
                 e.printStackTrace();
             }
             if (isFirst) {
-//                executors.execute(() -> {
-                Thread t = new Thread(() -> {
+                executors.execute(() -> {
                     try {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
@@ -107,12 +107,9 @@ public class EngineRace extends AbstractEngine {
                         e.printStackTrace();
                     }
                 });
-                t.setDaemon(true);
-                t.start();
             } else {
                 sharedBuffer = caches[1];
-//                executors.execute(
-                Thread t = new Thread(() -> {
+                executors.execute(() -> {
                     try {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
@@ -122,8 +119,6 @@ public class EngineRace extends AbstractEngine {
                         e.printStackTrace();
                     }
                 });
-                t.setDaemon(true);
-                t.start();
             }
             isFirst = !isFirst;
         }
@@ -155,16 +150,6 @@ public class EngineRace extends AbstractEngine {
 
     @Override
     public void open(String path) throws EngineException {
-//        new Thread(() -> {
-//            try {
-//                logger.error("self time start");
-//                Thread.sleep(TimeUnit.MINUTES.toMillis(25));
-//                logger.error("self exit ");
-//                System.exit(-1);
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-//        }).start();
         logger.info("--------open--------");
         File file = new File(path);
         // 创建目录
@@ -242,9 +227,15 @@ public class EngineRace extends AbstractEngine {
                 }
 //                对range时的第一块进行初始化
                 if (caches != null) {
-                    fileChannels[fileReadCount].read(caches[0], 0);
-                    caches[0].flip();
-                    list.put(caches[0]);
+                    executors.execute(() -> {
+                        try {
+                            fileChannels[fileReadCount].read(caches[0], 0);
+                            caches[0].flip();
+                            list.put(caches[0]);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    });
                 }
 
                 //获取完之后对key进行排序
@@ -331,31 +322,10 @@ public class EngineRace extends AbstractEngine {
         int num, count = 0;
         byte[] keyBytes = localKeyBytes.get();
         byte[] valueBytes = localValueBytes.get();
-
-
-//        lock.lock();
-//        if (isCache) {
-//            lock.unlock();
-//        } else {
-//            for (int i = 0; i < 2; i++) {
-//                new Thread(() -> {
-//
-//                }).start();
-//            }
-//            lock.unlock();
-//        }
-//        int cycleTime = 512;
-//        System.out.println(CURRENT_KEY_NUM);
-//        if (CURRENT_KEY_NUM > 10000000) {
-//            cycleTime = 511;
-//        }
-
         try {
             // 第一次初始化sharedBuffer
-//            for (int i = 0; i < cycleTime; i++) {
             for (int i = 0; i < FILE_COUNT; i++) {
                 logger.info("range file " + i);
-//            for (int i = 0; i < 2; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(1, TimeUnit.SECONDS);
                 num = valueOffsets[offReadCount].get();
@@ -385,6 +355,7 @@ public class EngineRace extends AbstractEngine {
     @Override
     public void close() {
         try {
+            executors.shutdownNow();
             logger.info("--------close--------");
         } catch (Exception e) {
             e.printStackTrace();
