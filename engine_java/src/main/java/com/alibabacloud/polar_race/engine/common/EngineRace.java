@@ -97,7 +97,7 @@ public class EngineRace extends AbstractEngine {
             }
             if (isFirst) {
 //                executors.execute(() -> {
-                new Thread(() -> {
+                Thread t = new Thread(() -> {
                     try {
                         caches[1].clear();
                         fileChannels[tempCount].read(caches[1], 0);
@@ -106,11 +106,13 @@ public class EngineRace extends AbstractEngine {
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                }).start();
+                });
+                t.setDaemon(true);
+                t.start();
             } else {
                 sharedBuffer = caches[1];
 //                executors.execute(
-                new Thread(() -> {
+                Thread t = new Thread(() -> {
                     try {
                         caches[0].clear();
                         fileChannels[tempCount].read(caches[0], 0);
@@ -119,7 +121,9 @@ public class EngineRace extends AbstractEngine {
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                }).start();
+                });
+                t.setDaemon(true);
+                t.start();
             }
             isFirst = !isFirst;
         }
@@ -340,16 +344,17 @@ public class EngineRace extends AbstractEngine {
 //            }
 //            lock.unlock();
 //        }
-        int cycleTime = 512;
-        System.out.println(CURRENT_KEY_NUM);
-        if (CURRENT_KEY_NUM > 10000000) {
-            cycleTime = 511;
-        }
+//        int cycleTime = 512;
+//        System.out.println(CURRENT_KEY_NUM);
+//        if (CURRENT_KEY_NUM > 10000000) {
+//            cycleTime = 511;
+//        }
 
         try {
             // 第一次初始化sharedBuffer
-            for (int i = 0; i < cycleTime; i++) {
-                logger.info("range file "+i);
+//            for (int i = 0; i < cycleTime; i++) {
+            for (int i = 0; i < FILE_COUNT; i++) {
+                logger.info("range file " + i);
 //            for (int i = 0; i < 2; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(1, TimeUnit.SECONDS);
