@@ -33,8 +33,7 @@ public class EngineRace extends AbstractEngine {
 
     private static final int SHIFT_NUM = 12;
     // 存放 value 的文件数量 128
-//    private static final int FILE_COUNT = 512;
-    private static int FILE_COUNT = 512;
+    private static final int FILE_COUNT = 512;
 
     //128块 1块 8.4375m = 8640 KB = 8847360 B  1个文件 4320m
     private static final int VALUE_FILE_SIZE = 520 * 1024 * 1024;
@@ -341,14 +340,15 @@ public class EngineRace extends AbstractEngine {
 //            }
 //            lock.unlock();
 //        }
+        int cycleTime = 512;
         System.out.println(CURRENT_KEY_NUM);
         if (CURRENT_KEY_NUM > 10000000) {
-            FILE_COUNT = 511;
+            cycleTime = 511;
         }
 
         try {
             // 第一次初始化sharedBuffer
-            for (int i = 0; i < FILE_COUNT; i++) {
+            for (int i = 0; i < cycleTime; i++) {
                 logger.info("range file "+i);
 //            for (int i = 0; i < 2; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer

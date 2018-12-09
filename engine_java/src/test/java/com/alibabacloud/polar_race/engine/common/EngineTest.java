@@ -7,10 +7,17 @@
 //import org.junit.runners.JUnit4;
 //import org.junit.runners.MethodSorters;
 //
+//import java.util.List;
 //import java.util.concurrent.CountDownLatch;
 //import java.util.concurrent.ExecutorService;
 //import java.util.concurrent.Executors;
 //
+//
+//import com.google.common.collect.Lists;
+//import com.google.common.util.concurrent.Futures;
+//import com.google.common.util.concurrent.ListenableFuture;
+//import com.google.common.util.concurrent.ListeningExecutorService;
+//import com.google.common.util.concurrent.MoreExecutors;
 ///**
 // * Author : Alex
 // * Date : 2018/11/13 22:20
@@ -194,5 +201,28 @@
 //        long end = System.currentTimeMillis();
 //        System.out.println(end - start);
 //    }
+//
+////    @Test
+////    public void range() throws Exception{
+////        List<ListenableFuture<Integer>> futures = Lists.newArrayList();
+////        ListeningExecutorService executorService = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(64));
+////        futures = Lists.newArrayList();
+////        AbstractVisitor visitor = new TestVisitor();
+////        try {
+////            for (int i = 0; i < readSeqCount; i++) {
+////                futures.add(executorService.submit(new EngineRanger(engine, visitor)));
+////            }
+////            resultsFuture = Futures.successfulAsList(futures);
+////            resultsFuture.get();
+////        } catch (Exception e) {
+////            e.printStackTrace();
+////            System.exit(-1);
+////        } finally {
+////            executorService.shutdown();
+////            memCheckFuture.cancel(true);
+////            executor.shutdown();
+////            engine.close();
+////        }
+////    }
 //
 //}
