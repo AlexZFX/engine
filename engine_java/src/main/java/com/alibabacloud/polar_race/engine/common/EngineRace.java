@@ -343,12 +343,13 @@ public class EngineRace extends AbstractEngine {
 //        }
         System.out.println(CURRENT_KEY_NUM);
         if (CURRENT_KEY_NUM > 10000000) {
-            FILE_COUNT = 2;
+            FILE_COUNT = 511;
         }
 
         try {
             // 第一次初始化sharedBuffer
             for (int i = 0; i < FILE_COUNT; i++) {
+                logger.info("range file "+i);
 //            for (int i = 0; i < 2; i++) {
                 // 64 个屏障都到了才继续运行，运行前先获取buffer
                 cyclicBarrier.await(1, TimeUnit.SECONDS);
