@@ -22,8 +22,7 @@ public class EngineRace extends AbstractEngine {
     private static final int KEY_LEN = 8;
     //总key数量
     private static final int KEY_NUM = 64000000;
-    //    private static final int KEY_NUM = 64000;
-    // key+offset 长度 16B
+    // key+offset 长度 12B
     private static final int KEY_AND_OFF_LEN = 12;
     // 线程数量
     private static final int THREAD_NUM = 64;
@@ -45,9 +44,6 @@ public class EngineRace extends AbstractEngine {
     private static int[] offs;
 
     private static LongIntHashMap[] map = new LongIntHashMap[THREAD_NUM];
-
-    //key 文件的fileChannel
-    private static FileChannel[] keyFileChannels = new FileChannel[THREAD_NUM];
 
     private static AtomicInteger[] keyOffsets = new AtomicInteger[THREAD_NUM];
 
@@ -172,7 +168,6 @@ public class EngineRace extends AbstractEngine {
                 for (int i = 0; i < THREAD_NUM; i++) {
                     randomAccessFile = new RandomAccessFile(path + File.separator + i + ".key", "rw");
                     FileChannel channel = randomAccessFile.getChannel();
-                    keyFileChannels[i] = channel;
                     keyMappedByteBuffers[i] = channel.map(FileChannel.MapMode.READ_WRITE, 0, KEY_FILE_SIZE);
                     keyOffsets[i] = new AtomicInteger(0);
                     for (int j = 0; j < 8; j++) {
@@ -186,7 +181,7 @@ public class EngineRace extends AbstractEngine {
 
                 CountDownLatch countDownLatch = new CountDownLatch(THREAD_NUM);
                 for (int i = 0; i < THREAD_NUM; i++) {
-                    // 只要进入判断则说明是在读取过程中，存在相同key
+                    // 只要进入判断则说明是在读取过程中
                     if (!(keyOffsets[i].get() == 0)) {
                         if (caches == null) {
                             caches = new ByteBuffer[2];
